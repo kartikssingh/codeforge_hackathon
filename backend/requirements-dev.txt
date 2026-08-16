@@ -1,0 +1,11 @@
+# ARIA — development and test tooling
+#
+#   pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+#   pytest backend/tests -q
+#
+# The suite runs entirely offline: no models, no Ollama, no network. It builds
+# its own inventory ledger in a temp directory and never touches data/.
+
+pytest==8.4.2
+httpx==0.28.1        # required by fastapi.testclient
+ruff==0.14.5         # lint + format: ruff check backend

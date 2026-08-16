@@ -1,215 +1,104 @@
-## Backend — Offline Emergency Intelligence Hub
+# ARIA backend
 
-This directory contains the FastAPI backend for the Offline Emergency Intelligence Hub.  
-It exposes a REST API that orchestrates the audio → AI triage → inventory → volunteer dispatch pipeline and is designed to run fully offline.
+FastAPI service: intake pipeline, triage, priority queue, dispatch, inventory.
+Bound to `127.0.0.1`, no outbound network calls at runtime.
+
+```bash
+pip install -r requirements.txt        # core, ~40 MB — this alone works
+python main.py                         # http://127.0.0.1:8000
+python main.py --port 8100 --reload    # development
+pytest tests -q                        # 96 tests, offline, ~2 s
+```
+
+Full documentation lives in [`../docs/`](../docs/): architecture, setup, API
+reference, configuration.
 
 ---
 
-## 1. Quick Start
+## Package map
 
-### 1.1. Create and activate a virtualenv
+```
+main.py                 entry point; --host --port --reload --log-level
+requirements.txt        core (fastapi, uvicorn, pydantic, rapidfuzz)
+requirements-ml.txt     whisper, torch, llama-index, sentence-transformers
+requirements-dev.txt    pytest, httpx, ruff
+.env.example            every tunable, documented
 
-```bash
-python -m venv .venv
-.venv\Scripts\activate  # on Windows
-# source .venv/bin/activate  # on macOS/Linux
+aria/
+  config.py             settings from env + .env; nothing imported from it mutates
+  schemas.py            pydantic contracts — the single source of truth for payloads
+
+  domain/               pure logic, no I/O, no third-party imports
+    enums.py            Severity, RequestStatus, VolunteerStatus
+    priority.py         heap key formula, escalation schedule, promotion ladder
+
+  core/                 infrastructure
+    errors.py           exception hierarchy → HTTP status codes
+    logging.py          logging setup + the agent audit trail
+    priority_queue.py   indexed max-heap with lazy deletion
+    eventbus.py         in-process pub/sub feeding the SSE stream
+
+  utils/                timeutil · textutil (matching) · audiofile (temp files)
+
+  llm/                  base.py (interface) · ollama.py · npu.py · registry
+  agents/               denoise · transcribe · retrieval · vagueness · rules
+                        · triage · logistics · pipeline (orchestrator)
+  services/             inventory · requests · dispatch · escalation
+                        · persistence · metrics · hub (composition root)
+  api/                  deps.py + routes/ (thin adapters over services)
+
+data/
+  inventory.csv         the stock ledger
+  triage_rules.json     24 deterministic rules cited to protocol documents
+  protocols/            26 offline first-aid and operations PDFs
+
+scripts/
+  export_npu_model.py   one-off model export for Intel NPU / Apple ANE
+  smoke_test.py         drive a live server end to end over HTTP
+
+tests/                  96 offline unit and API tests
 ```
 
-### 1.2. Install dependencies
-
-The project uses `pyproject.toml` / Poetry, but you can also install directly:
-
-```bash
-pip install -r requirements.txt
-```
-
-If you are using Poetry:
-
-```bash
-poetry install
-```
-
-### 1.3. Download models & prepare data
-
-1. **Gemma model**  
-  The system uses Ollama for local inference. Ensure you have pulled the model:
-
-   ```bash
-   ollama pull gemma3:1b
-   ```
-   ```
-
-2. **Protocol PDFs (for RAG)**  
-   Put emergency manuals and protocols in:
-
-   ```text
-   backend/data/protocols/*.pdf
-   ```
-
-3. **Inventory CSV**  
-   Ensure `backend/data/inventory.csv` exists. A sample format is documented in `PROJECT_STRUCTURE.md`.
-
-### 1.4. Run the backend
-
-From the `backend/` directory:
-
-```bash
-uvicorn main:app --host 127.0.0.1 --port 8000
-```
-
-On startup:
-
-- PDFs in `data/protocols/` are indexed by LlamaIndex.
-- The escalation scheduler for the priority queue is started.
-- The health endpoint `/health` becomes available for the Electron app.
+Dependencies point one way: `api → services → agents → domain`. `domain` and
+`utils` import nothing beyond the standard library, which is why the test suite
+runs with no ML stack installed.
 
 ---
 
-## 2. Main Modules
+## Working with it
 
-### 2.1. Entry point
+**Add an endpoint** — a route in `aria/api/routes/`, registered in
+`routes/__init__.py`. Routes validate, call the hub, and shape the response;
+business logic belongs in a service.
 
-- `main.py`  
-  Creates the FastAPI app, registers routers, builds the vector index on startup, and starts the APScheduler escalation job.
+**Add a pipeline step** — a module in `aria/agents/` that raises
+`AgentUnavailableError` when its dependency is missing, then wire it into
+`agents/pipeline.py` with a `HandoffLog` entry so it shows up in the timeline.
 
-### 2.2. Configuration
+**Add an LLM backend** — subclass `LLMClient` in `aria/llm/`, implement
+`_generate` and `health`, register it in `llm/__init__.py`. The agents do not
+change.
 
-- `config.py`  
-  Central place for:
-  - paths (`DATA_DIR`, `PROTOCOLS_DIR`, `INVENTORY_CSV`, `MODELS_DIR`, …)
-  - model settings (`WHISPER_MODEL`, `EMBED_MODEL`, `GEMMA_MODEL_PATH`, …)
-  - API host/port
-  - volunteer settings and escalation interval.
+**Add a triage rule** — edit `data/triage_rules.json`, then
+`POST /admin/reload`. No code, no restart.
 
----
-
-## 3. Agents (Group 1)
-
-Located in `agents/` — all are pure-function style modules:
-
-- `denoiser.py` — STEP 2: audio denoising (configurable: `"noisereduce"` or `"facebook"`).
-- `intake_agent.py` — STEP 3: Whisper STT (`transcribe()`).
-- `retrieval_agent.py` — STEP 4: LlamaIndex retrieval (`build_index()`, `retrieve()`).
-- `vagueness_agent.py` — STEP 4b: hypothesis expansion when retrieval is low-confidence.
-- `rag_triage_agent.py` — STEP 5: RAG + Gemma triage to multi-situation JSON.
-- `logistics_agent.py` — STEP 6: annotate situations with inventory availability.
-- `agents/__init__.py` — re-exports all public agent functions for easy import.
-
-These are **stateless** and can be tested in isolation.
+**Change escalation policy** — `aria/domain/priority.py`. It is pure and
+directly unit-testable; `tests/test_priority_domain.py` is the place to prove
+the new behaviour.
 
 ---
 
-## 4. Core & Routers (Group 2)
+## Degraded operation
 
-### 4.1. Core state and scheduling (`core/`)
+Each capability that is missing removes exactly what it provides:
 
-- `priority_queue.py`  
-  Max-heap of emergency requests (singleton `priority_queue`) with:
-  - `push`, `peek_top_pending`, `get_sorted`, `update_key`, `update`.
+| Missing | Effect |
+|---|---|
+| `noisereduce` / `scipy` | raw audio goes to Whisper; request flagged degraded |
+| `openai-whisper` / ffmpeg | `POST /pipeline` returns 503 pointing at `/pipeline/text` |
+| `llama-index` / embeddings | no protocol search; the rule engine carries triage |
+| Ollama or a pulled model | rule engine only; every request flagged degraded |
+| `rapidfuzz` | falls back to `difflib` for item matching |
 
-- `request_store.py`  
-  In-memory registry for all requests (singleton `request_store`).
-
-- `dispatch_engine.py`  
-  Volunteer state machine:
-  - `VOLUNTEERS` dict (`V-01` …),
-  - `dispatch(queue)` to assign highest-priority pending request,
-  - `volunteer_return(...)` to mark volunteers available and re-dispatch.
-
-- `escalation_scheduler.py`  
-  APScheduler job that:
-  - runs every `ESCALATION_INTERVAL_SECS` (default 60s),
-  - boosts `heap_key` based on severity + waiting time.
-
-- `core/__init__.py`  
-  Exports the shared singletons and functions (`priority_queue`, `request_store`, `VOLUNTEERS`, `dispatch`, `volunteer_return`, `get_free_volunteer`).
-
-### 4.2. Routers (`routers/`)
-
-All routers use Pydantic models from `schemas.py` for request/response validation:
-
-- `pipeline.py`
-  - `POST /pipeline`  
-    Full pipeline: base64 audio → denoise → STT → retrieval (+vagueness if needed) → triage → logistics.  
-    Stores a PENDING request in `request_store`, returns the multi-situation report.
-
-- `approve.py`
-  - `POST /approve`  
-    HITL manager selects situations + optional manual override:
-    - marks selected situations,
-    - reserves items via `InventoryManager`,
-    - computes/updates heap key,
-    - pushes to `priority_queue` and calls `dispatch(...)`,
-    - returns updated queue + volunteers.
-
-- `queue.py`
-  - `GET /queue`  
-    Returns the current heap-sorted request list.
-
-- `volunteers.py`
-  - `GET /volunteers`  
-    Returns the `VOLUNTEERS` state for the dashboard.
-
-- `volunteer_return.py`
-  - `POST /volunteer/return`  
-    Marks a volunteer as back at base, restores returned items to inventory, updates the request to `RESOLVED`, then re-runs `dispatch(...)`.
-
-- `inventory.py`
-  - `GET /inventory` — full inventory view.
-  - `PUT /inventory/refill` — manual daily or partial refill.
-
----
-
-## 5. Utilities & Data
-
-- `utils/audio_utils.py`  
-  - `save_base64_wav()` — decodes base64 audio and writes `REQ-XXX_raw.wav`.
-  - `get_clean_path()` — path for `REQ-XXX_clean.wav`.
-  - `cleanup_temp()` — removes temp audio files after processing.
-
-- `utils/inventory_manager.py`  
-  `InventoryManager` encapsulates all `inventory.csv` reads/writes:
-  - `reserve`, `restore`, `daily_refill`, `partial_refill`, `get_all`.
-
-- `utils/logger.py`  
-  - `log_handoff()` appends structured events to `logs/handoffs.jsonl`.
-
-- `data/`  
-  - `inventory.csv` — current stock levels.
-  - `protocols/` — PDFs used by LlamaIndex.
-
----
-
-## 6. Testing & Manual Checks
-
-With the backend running on `127.0.0.1:8000`:
-
-- **Health check**
-
-```bash
-curl http://127.0.0.1:8000/health
-```
-
-- **Queue**
-
-```bash
-curl http://127.0.0.1:8000/queue
-```
-
-- **Volunteers**
-
-```bash
-curl http://127.0.0.1:8000/volunteers
-```
-
-To test the full audio pipeline, send a base64-encoded WAV to `POST /pipeline` (the Electron frontend does this via `window.api.runPipeline(audio_b64)`).
-
----
-
-## 7. Design Rules (Important)
-
-- All shared config lives in `config.py` (no hard-coded paths).
-- All request/response schemas live in `schemas.py` (no inline Pydantic models in routers).
-- Core modules (`core/*`) must **never** import agents; only routers may call agents.
-- Agents are pure functions; they should be easy to unit-test independently.
-
+`GET /health/detail` reports each of these by name. The core loop — queue,
+escalation, inventory, dispatch — has no optional dependencies at all.

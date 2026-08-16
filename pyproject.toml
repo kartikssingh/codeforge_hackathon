@@ -1,21 +1,44 @@
-[tool.poetry]
-package-mode = false
-
 [project]
-name = "codeforge-hackathon"
-version = "0.1.0"
-description = ""
-authors = [
-    {name = "DhruvPokhriyal",email = "171908255+DhruvPokhriyal@users.noreply.github.com"}
-]
+name = "aria-relief"
+version = "2.0.0"
+description = "ARIA — offline triage and volunteer dispatch for disaster relief shelters"
 readme = "README.md"
-requires-python = ">=3.12"
-dependencies = [
-    "denoiser (>=0.1.5,<0.2.0)",
-    "soundfile (>=0.13.1,<0.14.0)"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+
+# Dependencies are installed from the requirements files, not from here — the
+# split matters operationally: backend/requirements.txt is a ~40 MB install that
+# runs the whole shelter workflow, and requirements-ml.txt adds the ~3 GB audio
+# and RAG stack on top. See docs/SETUP.md.
+dependencies = []
+
+[project.optional-dependencies]
+ml = ["openai-whisper", "torch", "llama-index-core", "sentence-transformers"]
+dev = ["pytest>=8", "httpx>=0.27", "ruff>=0.6"]
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+pythonpath = ["backend"]
+addopts = "-q --strict-markers"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["backend"]
+exclude = ["backend/vector_store", "backend/models", "frontend/node_modules"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM", "RUF"]
+ignore = [
+    "E501",   # line length is handled by the formatter
+    "B008",   # FastAPI's Depends() in defaults is the documented pattern
+    "N818",   # our error classes read better without the Error suffix rule
+    "RUF012", # mutable class attrs are fine on pydantic models
 ]
 
+[tool.ruff.lint.per-file-ignores]
+"backend/tests/*" = ["S101", "SLF001"]  # asserts and private access are the point
 
-[build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
-build-backend = "poetry.core.masonry.api"
+[tool.ruff.lint.isort]
+known-first-party = ["aria"]

@@ -1,482 +1,457 @@
-# 🚨 Offline Emergency Intelligence Hub
-> **AI for Impact — 5-Day Sprint Challenge | Track 2: Disaster Relief**
-> A fully offline, CPU-only multi-agent RAG triage and volunteer dispatch system for disaster shelters.
+# ARIA — Autonomous Relief Intelligence Agent
+
+**Offline triage and volunteer dispatch for disaster relief shelters.**
+One laptop. No internet. Audio or typed distress reports in; a ranked,
+human-approved, inventory-aware dispatch queue out.
 
 ---
 
-## 📌 Problem Statement
+## The problem
 
-During natural disasters, the internet and cloud services fail first. A **command-center laptop** at the shelter receives distress calls as audio files. Volunteers (1–3 people on-site) must be dispatched to people in need. The shelter has:
-- A fixed **inventory** of medical and survival supplies
-- A **library of offline PDFs** (first-aid manuals, emergency protocols)
-- A **limited number of volunteers** who physically travel to people in distress
+When a disaster hits, connectivity fails first. A shelter's command post is a
+laptop on a folding table, and the people running it have:
 
-The system must triage every incoming report, retrieve relevant protocols from PDFs using RAG, confirm what inventory is available, dispatch volunteers to the highest-priority cases first, and track everything on a live dashboard — all with zero internet.
+- a stream of distress reports — phone recordings, radio traffic, runners
+- a fixed shelf of supplies and no resupply until the roads reopen
+- one to three volunteers who physically walk to whoever needs help
+- a binder of first-aid and emergency protocols nobody has time to read
+
+Every report has to be triaged, matched to the right protocol, checked against
+what is actually on the shelf, ordered so the most urgent case goes first, and
+tracked until the volunteer walks back through the door. ARIA does all of that
+locally, and asks a human before it commits anything.
 
 ---
 
-## ▶️ Run The Project
+## What makes it work offline
 
-### 1) Install dependencies (first time only)
+ARIA has three triage capabilities and degrades through them rather than
+failing:
+
+| Available | What ARIA does |
+|---|---|
+| Whisper + RAG + local LLM | Full pipeline: denoise → transcribe → retrieve protocols → LLM differential, cross-checked against the rule engine |
+| No LLM (Ollama down, no model pulled) | Deterministic **rule engine** produces a cited differential from the same protocol library |
+| No models at all — a bare `pip install -r backend/requirements.txt` | Everything above minus audio: typed intake, rule triage, queue, escalation, inventory, dispatch, metrics |
+
+That last row is the point. The core install is ~40 MB and has three
+dependencies. A shelter that cannot download 3 GB of model weights still gets a
+working triage and dispatch system, and the test suite runs in the same mode —
+96 tests, no models, 2 seconds.
+
+---
+
+## Quick start
 
 ```bash
-# from project root
-/home/ankit/python/codeforge_hackathon/backend/venv/bin/pip install -r backend/requirements.txt
-cd frontend && npm install
+# 1. Backend (core only — works immediately)
+pip install -r backend/requirements.txt
+python backend/main.py
+
+# 2. Desktop app, in another terminal
+cd frontend && npm install && npm start
 ```
 
-### 2) Recommended run mode (Frontend starts Backend automatically)
+The Electron shell starts the backend itself if one is not already running, so
+step 2 alone is enough once dependencies are installed.
+
+<details>
+<summary><b>Adding speech-to-text and RAG (~3 GB)</b></summary>
 
 ```bash
-# from project root
-cd frontend
-npm start
+sudo apt install ffmpeg -y                                        # Whisper needs it
+pip install torch --index-url https://download.pytorch.org/whl/cpu  # CPU build, not CUDA
+pip install -r backend/requirements-ml.txt
+
+# Local LLM, served by Ollama
+curl -fsSL https://ollama.com/install.sh | sh
+ollama pull gemma3:1b
 ```
 
-This launches Electron and auto-starts `backend/main.py` using `backend/venv/bin/python`.
+Nothing else changes: ARIA detects the new capabilities on the next start and
+`GET /health/detail` will show them as available.
+</details>
 
-### 3) Manual mode (optional)
-
-Run backend and frontend separately if you want explicit terminal control:
+<details>
+<summary><b>Check what this machine can actually do</b></summary>
 
 ```bash
-# Terminal A (from project root)
-backend/venv/bin/python backend/main.py
+curl -s http://127.0.0.1:8000/health/detail | python3 -m json.tool
 ```
-
-```bash
-# Terminal B (from project root)
-cd frontend
-npm start
-```
-
-### 4) Quick health check
-
-```bash
-curl http://127.0.0.1:8000/health
-```
-
-Expected response:
-
-```json
-{"status":"ok"}
-```
-
-### 5) If startup fails
-
-- Port already in use: `pkill -f "backend/main.py|electron"` and start again.
-- Missing SLM model: ensure Ollama is running (`ollama serve`) and the model is pulled (`ollama pull gemma3:1b`).
-- `ffmpeg` missing: install system package (`sudo apt install ffmpeg -y` on Ubuntu).
-
-## 🔄 Complete System Workflow
-
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│  STEP 1 — AUDIO INPUT                      [Electron Frontend]       │
-│  Volunteer loads incoming distress audio file (from phone call etc.) │
-│  Sent to backend as base64 via POST /pipeline                        │
-└──────────────────────────────┬───────────────────────────────────────┘
-                               │ audio file (base64)
-                               ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│  STEP 2 — AUDIO DENOISING                  [FastAPI Backend]         │
-│  noisereduce (or facebook denoiser — benchmarked) strips:            │
-│  crowd noise · alarms · rain · crackling phone audio                 │
-│  → clean .wav ready for transcription                                │
-└──────────────────────────────┬───────────────────────────────────────┘
-                               │ denoised .wav
-                               ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│  STEP 3 — SPEECH TO TEXT                   [FastAPI Backend]         │
-│  Whisper base (fp16=False) → clean transcript string                 │
-└──────────────────────────────┬───────────────────────────────────────┘
-                               │ transcript
-                               ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│  STEP 4 — RAG RETRIEVAL (First Pass)       [FastAPI Backend]         │
-│  Embed transcript → semantic search over offline PDF index           │
-│  Returns top-k chunks with confidence scores                         │
-│                                                                      │
-│  CONFIDENCE CHECK:                                                   │
-│    Top chunk score ≥ 0.8 → proceed to Step 5                        │
-│    Top chunk score < 0.8 → VAGUE QUERY → Step 4b                    │
-└───────────────┬──────────────────────────┬───────────────────────────┘
-                │ (clear, conf ≥ 0.8)      │ (vague, conf < 0.8)
-                │                          ▼
-                │          ┌───────────────────────────────────────────┐
-                │          │  STEP 4b — SLM VAGUENESS RESOLVER         │
-                │          │  "my neighbour uncle is not moving and     │
-                │          │   his legs look wrong"                     │
-                │          │  SLM generates possible diagnoses at       │
-                │          │  each criticality level:                   │
-                │          │    CRITICAL: cardiac arrest, stroke        │
-                │          │    HIGH: fracture + shock                  │
-                │          │    LOW: faint, exhaustion                  │
-                │          │  → Retry retrieval for each hypothesis     │
-                │          └──────────────────┬────────────────────────┘
-                │                             │ expanded queries
-                └──────────────┬──────────────┘
-                               │ retrieved chunks (with source refs)
-                               ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│  STEP 5 — RAG SLM + TRIAGE                [FastAPI Backend]          │
-│  SLM reads retrieved chunks + transcript                             │
-│  Outputs a structured report listing MULTIPLE situation possibilities│
-│  Each possibility includes:                                          │
-│    · Situation label + severity (CRITICAL / HIGH / MEDIUM / LOW)    │
-│    · Materials/equipment required                                    │
-│    · Step-by-step instructions (for the volunteer on-site)          │
-│    · Retrieved source chunks (for explainability)                    │
-│                                                                      │
-│  HEAP KEY formula per situation:                                     │
-│    key = severity_score                                              │
-│          - (travel_time_min × 2)                                     │
-│          - resolution_time_min                                       │
-│    + exponential urgency escalation over time (see Core Logic)      │
-└──────────────────────────────┬───────────────────────────────────────┘
-                               │ multi-situation report
-                               ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│  STEP 6 — INVENTORY CHECK                  [FastAPI Backend]         │
-│  For each situation possibility in the report:                       │
-│    Check each required item against inventory CSV                    │
-│    Items available → shown normally                                  │
-│    Items unavailable → greyed out in UI checklist                   │
-└──────────────────────────────┬───────────────────────────────────────┘
-                               │ availability-annotated report
-                               ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│  STEP 7 — HUMAN-IN-THE-LOOP APPROVAL       [Electron Frontend]       │
-│  Shelter manager sees the full report:                               │
-│    · Multiple situation possibilities with checklists                │
-│    · Items greyed out if unavailable in inventory                    │
-│    · Retrieved PDF source chunks shown for explainability            │
-│    · Manager selects ≥ 1 situation(s) to confirm                    │
-│    · OR manually overrides: enters own condition + items             │
-│    · Selected items are RESERVED from inventory                      │
-│  → Manager clicks Approve → enters Priority Queue                   │
-└──────────────────────────────┬───────────────────────────────────────┘
-                               │ approved situations + reserved items
-                               ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│  STEP 8 — MAX-HEAP PRIORITY QUEUE          [FastAPI Backend]         │
-│  Request pushed into max-heap                                        │
-│  heap_key = severity_score - (travel_time×2) - resolution_time      │
-│  Key escalates exponentially over time per category thresholds       │
-│  Buffer time added at each escalation step                           │
-│  Same-key tie-break = arrival time (FIFO)                           │
-└──────────────────────────────┬───────────────────────────────────────┘
-                               │ heap updated
-                               ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│  STEP 9 — VOLUNTEER DISPATCH ENGINE        [FastAPI Backend]         │
-│  Assigns free volunteers to top-heap tasks                           │
-│  Timer per volunteer (countdown to expected return)                  │
-│  Timer hits 0 → freezes at 0 / goes negative                        │
-│  Volunteer NOT reassigned until shelter head clicks "Back at base"   │
-│  On return: popup checklist of items taken — manager ticks returned  │
-│  Returned items restored to inventory immediately                    │
-└──────────────────────────────┬───────────────────────────────────────┘
-                               │ live state
-                               ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│  STEP 10 — LIVE DASHBOARD                  [Electron Renderer]       │
-│                                                                      │
-│  Panel A — Priority Queue (heap order, auto-refresh)                 │
-│    REQ-ID · Severity · Summary · Request Time · Volunteer            │
-│    Expected Return · Status · [Back at Base] button                  │
-│                                                                      │
-│  Panel B — Volunteer Activity Board                                  │
-│    Volunteer ID · Status · Current REQ-ID                            │
-│    Countdown timer (live clock) · Items taken                        │
-│                                                                      │
-│  Panel C — Inventory Status                                          │
-│    All items · Available qty · Reserved qty · Total                  │
-│    Daily refill indicator · Low-stock alert (≤ 60%)                 │
-└──────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## 🧠 Core Logic
-
-### Heap Key Formula
-
-```
-heap_key = severity_base_score × scale_factor
-           - (travel_time_minutes × 2)
-           - resolution_time_minutes
-           + urgency_escalation(t)
-```
-
-| Severity | Base Score |
-|----------|-----------|
-| CRITICAL | 100 |
-| HIGH | 75 |
-| MEDIUM | 50 |
-| LOW | 25 |
-
-scale_factor = 1000 (to ensure time penalties are significant but don't overshadow severity)
-
-**Travel time and resolution time** are estimated by the RAG SLM per situation and penalise key (harder to reach = lower initial priority vs equally severe but reachable case). Buffer time is added at every escalation step: `buffer = f(travel_time, resolution_time)`.
-
----
-
-### Exponential Urgency Escalation
-
-Every unresolved request has its key escalated on a per-category schedule. The escalation is **exponential** — each interval shorter than the last, modelling real-world deterioration.
-
-```
-EXAMPLE — Common Cold (initially LOW):
-  t=0h      key += 0       (baseline)
-  t+6h      key += 5       (may develop fever)
-  t+10h     key += 15      (high fever possible)
-  t+13h     key += 40      (weakness, dehydration risk)
-  t+15h     key += 100     (now effectively CRITICAL)
-
-  Buffer added at each step = f(travel_time, resolution_time)
-  so even short trips are re-evaluated against the escalated key
-
-EXAMPLE — Fracture (HIGH):
-  t=0h      key += 0
-  t+2h      key += 20      (pain/shock worsening)
-  t+4h      key += 60      (nerve damage risk)
-  t+5h      key += 150     (vascular compromise)
-
-EXAMPLE — Cardiac Arrest (CRITICAL):
-  t=0h      key += 0
-  t+4min    key += 500     (brain damage threshold)
-```
-
-Escalation runs on a **background scheduler** (APScheduler) checking all PENDING tasks every 60 seconds and updating keys.
-
----
-
-### Vague Query Flow (RAG Confidence < 0.8)
-
-```
-Transcript: "my neighbour uncle is not moving and his legs look wrong"
-               ↓
-  Top retrieval confidence = 0.43  →  VAGUE
-               ↓
-  SLM Vagueness Resolver generates hypotheses:
-    CRITICAL: cardiac arrest, stroke, internal bleeding
-    HIGH:     severe fracture with shock, spinal injury
-    MEDIUM:   faint, seizure, diabetic episode
-    LOW:      exhaustion, dehydration
-               ↓
-  Retry retrieval for each hypothesis
-               ↓
-  Merge top chunks across all hypotheses
-               ↓
-  RAG SLM generates multi-situation report (all possibilities)
-```
-
----
-
-### Human-in-the-Loop Report (Step 7)
-
-The manager sees a report card per situation possibility:
-
-```
-┌─────────────────────────────────────────────────────┐
-│ SITUATION A: Cardiac Arrest             🔴 CRITICAL  │
-│ Confidence: 0.91                                     │
-│                                                      │
-│ Materials Required:                                  │
-│  ☑ AED (Defibrillator)     Bin C-3  — AVAILABLE (2) │
-│  ☑ CPR Mask                Bin A-4  — AVAILABLE (5) │
-│  ☐ Oxygen Tank             Bin B-1  — OUT OF STOCK  │  ← greyed
-│                                                      │
-│ Instructions: [Step 1... Step 2...] [Source: pg.34] │
-│ Retrieved chunks: [chunk 1] [chunk 2]               │
-│                                                      │
-│  [ SELECT THIS SITUATION ]                           │
-└─────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────┐
-│ SITUATION B: Severe Fracture + Shock   🟠 HIGH       │
-│ Confidence: 0.76                                     │
-│ ...                                                  │
-│  [ SELECT THIS SITUATION ]                           │
-└─────────────────────────────────────────────────────┘
-
-  [ OVERRIDE MANUALLY ]  ← manager enters own diagnosis + items
-
-  [ APPROVE SELECTED → DISPATCH ]
-```
-
-Manager selects ≥ 1 situation(s). All selected situations' required items are **reserved** from inventory simultaneously.
-
----
-
-### Volunteer Timer + Return Flow
-
-```
-Volunteer dispatched → countdown timer starts on dashboard
-  timer = travel_time + resolution_time (per situation estimate)
-
-Timer reaches 0:
-  → Freezes at 0:00 (or counts negative)
-  → Volunteer NOT reassigned automatically
-  → Shelter head must click "Back at Base" button
-
-"Back at Base" clicked:
-  → Popup: checklist of every item volunteer took
-  → Manager ticks which items were returned/unused
-  → Returned items restored to inventory immediately
-  → Volunteer status → AVAILABLE
-  → Dispatch engine re-runs for next task
-```
-
----
-
-### Inventory Management
-
-```
-RESERVATION:   Items reserved when situation(s) approved in Step 7
-               available_qty -= reserved_qty
-               reserved shown separately on inventory panel
-
-RETURN:        When volunteer returns, manager checks returned items
-               available_qty += returned_qty
-
-DAILY REFILL:  Full refill every 24 hours (midnight reset)
-               If item ≤ 60% remaining → flag for early refill
-
-DISPLAY:
-  Item | Available | Reserved | Total | Status
-  Leg Splint | 3 | 1 | 4 | ✅
-  AED        | 0 | 2 | 2 | ⚠️ ALL RESERVED
-  Oxygen     | 0 | 0 | 0 | 🔴 OUT OF STOCK
-```
-
----
-
-### Request Object Schema
 
 ```json
 {
-  "request_id":          "REQ-007",
-  "transcript":          "elderly woman, leg looks wrong, cannot move",
-  "situations": [
-    {
-      "label":           "Fracture — Femur",
-      "severity":        "HIGH",
-      "severity_score":  75,
-      "heap_key":        58.0,
-      "travel_time_min": 7,
-      "resolution_time_min": 15,
-      "materials":       [{"item": "Leg Splint", "qty": 1, "bin": "A-1", "available": true}],
-      "instructions":    "Step 1: Immobilise the limb...",
-      "source_chunks":   ["first_aid_manual.pdf p.42", "trauma_guide.pdf p.11"],
-      "confidence":      0.89,
-      "selected":        true
-    }
-  ],
-  "retrieval_was_vague": false,
-  "time_of_request":     "14:32:07",
-  "assigned_volunteer":  "V-02",
-  "assigned_at":         "14:33:01",
-  "expected_return":     "14:55:01",
-  "actual_return":       null,
-  "items_taken":         [{"item": "Leg Splint", "qty": 1}],
-  "items_returned":      [],
-  "status":              "ASSIGNED",
-  "escalation_stage":    0,
-  "next_escalation_at":  "16:32:07"
+  "status": "degraded",
+  "components": [
+    {"name": "inventory",       "ok": true,  "detail": "22 item(s) loaded"},
+    {"name": "triage_rules",    "ok": true,  "detail": "24 rule(s) loaded"},
+    {"name": "protocol_index",  "ok": true,  "detail": "26 document(s) indexed"},
+    {"name": "speech_to_text",  "ok": false, "detail": "openai-whisper not installed"},
+    {"name": "language_model",  "ok": true,  "detail": "gemma3:1b ready"},
+    {"name": "escalation",      "ok": true,  "detail": "running every 60s"},
+    {"name": "persistence",     "ok": true,  "detail": "snapshots → backend/state/aria_state.json"}
+  ]
 }
 ```
 
----
-
-## 🖥️ Dashboard Panels
-
-### Panel A — Priority Queue
-
-| REQ-ID | Severity | Summary | Requested | Volunteer | Est. Return | Timer | Status |
-|--------|----------|---------|-----------|-----------|-------------|-------|--------|
-| REQ-007 | 🔴 CRITICAL | Cardiac arrest suspect | 14:32 | V-02 | 14:55 | 12:43 | ASSIGNED |
-| REQ-003 | 🔴 CRITICAL | Child not breathing | 14:28 | V-01 | 14:43 | 02:11 | ASSIGNED |
-| REQ-009 | 🟠 HIGH | Fracture + shock | 14:35 | V-03 | 14:58 | 18:00 | ASSIGNED |
-| REQ-005 | 🟡 MEDIUM | Diabetic, no insulin | 14:30 | — | — | — | PENDING |
-| REQ-002 | 🟢 LOW | Family needs food | 12:27 | — | — | — | PENDING ⚠️ escalating |
-
-### Panel B — Volunteer Activity Board
-
-| Volunteer | Status | REQ-ID | Task Summary | Timer | Items Taken | Action |
-|-----------|--------|--------|-------------|-------|-------------|--------|
-| V-01 | 🔴 BUSY | REQ-003 | Child not breathing | 02:11 | CPR Mask ×1 | [Back at Base] |
-| V-02 | 🔴 BUSY | REQ-007 | Cardiac arrest | 12:43 | AED ×1, CPR Mask ×1 | [Back at Base] |
-| V-03 | 🔴 BUSY | REQ-009 | Fracture | 18:00 | Leg Splint ×1 | [Back at Base] |
-| V-04 | 🟢 AVAILABLE | — | — | — | — | — |
+`degraded` means reduced capability, not failure — the dashboard shows a banner
+naming exactly what is missing.
+</details>
 
 ---
 
-## 🏗️ Tech Stack
-
-| Layer | Tool | Purpose |
-|-------|------|---------|
-| Frontend | Electron + HTML/CSS/JS | Desktop shell, dashboard, HITL approval UI |
-| Backend | FastAPI + Uvicorn | REST API, 127.0.0.1 only |
-| Audio Denoising | `noisereduce` + Facebook Denoiser (benchmarked) | Shelter noise removal |
-| Speech-to-Text | `openai-whisper` base | Audio → transcript |
-| RAG Retrieval | `LlamaIndex` + `all-MiniLM-L6-v2` | Semantic PDF search with confidence scores |
-| Vagueness Resolver | Ollama (Gemma 3) | Expands vague queries into hypotheses |
-| RAG SLM + Triage | Ollama (Gemma 3) | Multi-situation report + severity + instructions |
-| Heap Key Escalation | APScheduler + custom formula | Exponential urgency escalation |
-| Priority Queue | Python `heapq` | Max-heap with dynamic key escalation |
-| Dispatch Engine | Custom Python scheduler | Volunteer assignment, timer, return flow |
-| Inventory | `pandas` + `rapidfuzz` | CSV lookup, reservation, refill logic |
-| Logging | Python `logging` + JSON | Full agent handoff logs, explainability trail |
-| Packaging | PyInstaller + electron-builder | Single offline installer |
-
----
-
-## 📁 Project Structure (Summary)
+## How a report moves through the system
 
 ```
-emergency-hub/
-├── electron/           main.js · preload.js
-├── frontend/           index.html · app.js · styles.css
+   AUDIO FILE                          TYPED REPORT
+       │                                     │
+       ▼                                     │
+  ┌─────────┐  crowd noise, alarms, rain     │
+  │ DENOISE │  noisereduce / DNS64 / skip    │
+  └────┬────┘                                │
+       ▼                                     │
+  ┌────────────┐  Whisper base, CPU          │
+  │ TRANSCRIBE │  fp16=False                 │
+  └────┬───────┘                             │
+       └──────────────┬──────────────────────┘
+                      ▼
+            ┌───────────────────┐  MiniLM embeddings over 26 protocol PDFs
+            │ RETRIEVE PROTOCOL │  top-k passages + relevance score
+            └────────┬──────────┘
+                     │
+        relevance < 0.55 ("my uncle isn't moving and his legs look wrong")
+                     ▼
+            ┌────────────────────┐  LLM or rules propose conditions per
+            │ EXPAND HYPOTHESES  │  severity, then retrieve again for each
+            └────────┬───────────┘
+                     ▼
+            ┌────────────────────────────────────────┐
+            │ TRIAGE                                 │
+            │  LLM differential  ⊎  rule engine      │
+            │  merged, deduplicated, severity-ranked │
+            └────────┬───────────────────────────────┘
+                     ▼
+            ┌───────────────────┐  every material checked against the live
+            │ CHECK INVENTORY   │  ledger; shortfalls shown, never hidden
+            └────────┬──────────┘
+                     ▼
+    ╔════════════════════════════════════════════════╗
+    ║  HUMAN REVIEW — nothing is committed until now  ║
+    ║  tick the situations you accept · adjust        ║
+    ║  quantities · override entirely · discard       ║
+    ╚════════════════┬═══════════════════════════════╝
+                     ▼
+            ┌───────────────────┐  stock reserved atomically
+            │ PRIORITY QUEUE    │  heap_key = severity×1000 − travel×2 − on-site
+            └────────┬──────────┘  escalates while it waits
+                     ▼
+            ┌───────────────────┐  highest-priority request to the first free
+            │ DISPATCH          │  volunteer; countdown to expected return
+            └────────┬──────────┘
+                     ▼
+            ┌───────────────────────────────────────┐
+            │ BACK AT BASE                          │
+            │  returned stock restocked             │
+            │  used stock written off               │
+            │  volunteer freed → next task assigned │
+            └───────────────────────────────────────┘
+```
+
+---
+
+## The queue
+
+### Priority key
+
+```
+heap_key = severity_score × 1000        CRITICAL 100 · HIGH 75 · MEDIUM 50 · LOW 25
+         − travel_time_min × 2
+         − resolution_time_min
+         + escalation_boost
+```
+
+The ×1000 scale makes severity dominate: a CRITICAL case an hour away still
+outranks a HIGH case next door. Within one severity tier the time penalties
+decide, so of two equally urgent cases the one that can be reached and closed
+faster goes first — which serves more people per volunteer-hour.
+
+Ties break by arrival time (first in, first out), so two equally critical
+requests never swap places on successive ticks.
+
+### Escalation — nobody starves at the bottom
+
+Every 60 seconds each waiting request is re-evaluated. Two things happen:
+
+- a **boost** inside its own tier, growing with the wait and with how far away
+  the casualty is;
+- a **promotion** to the next severity label once it has waited too long at the
+  current one: LOW → MEDIUM after 6 h, MEDIUM → HIGH after 4 h more, HIGH →
+  CRITICAL after 3 h more.
+
+The promotion clock restarts on each promotion, so the full ladder takes 13
+hours. Both are recomputed from scratch each pass rather than accumulated, so a
+restart, a replay or a double tick can never make a key drift.
+
+*(In the previous build every threshold was measured from the request time, so
+a LOW request that passed 6 h also satisfied MEDIUM's and HIGH's thresholds and
+was promoted to CRITICAL on three consecutive ticks. There is now a test for
+exactly this.)*
+
+---
+
+## The stock ledger
+
+`Total` is the bin's capacity, `Available` is on the shelf, `Reserved` is
+committed to an approved request but not yet consumed. The invariant
+`Available + Reserved ≤ Total` holds through every operation:
+
+```
+reserve   available → reserved     manager approves a situation
+release   reserved  → available    request cancelled before dispatch
+consume   reserved  → gone         used on site; capacity unchanged
+restore   reserved  → available    came back unused
+refill              → available    resupply
+```
+
+When a volunteer returns, the checklist quantities are restored and **the
+difference is written off as consumed**. Without that step — which the previous
+build was missing — every partially-used mission left phantom holds behind, and
+the shelf filled up with stock that did not exist.
+
+Reservations across several situations are aggregated and applied in one atomic
+step, so two situations that both want the last AED cannot each reserve it.
+Item names are matched exact → normalised → high-threshold fuzzy, and otherwise
+reported as *not stocked* rather than guessed at.
+
+---
+
+## The dashboard
+
+Three columns, dense by design, readable in bad light. Dark, light and
+high-contrast themes; every severity carries a label as well as a colour.
+
+**Column 1 — Intake and stock.** Audio upload or typed report. The stock panel
+shows available/reserved/capacity as one bar, floats anything low to the top,
+and has controls for restocking, adding items and running a resupply.
+
+**Column 2 — Incidents and volunteers.** A metric strip (open · critical · over
+SLA · volunteers busy · stock level), filter chips, and the incident cards
+themselves — each with severity, status, a live countdown to the volunteer's
+expected return, and escalation/vague/degraded markers. Below it, the volunteer
+board: who is out, on what, carrying which supplies, and how overdue they are.
+
+**Column 3 — Analysis.** The human-in-the-loop panel. In *review* mode every
+hypothesis in the differential is shown with its confidence, which engine
+produced it, its reasoning, its steps, its supplies with live stock levels, and
+its protocol citations. Tick the ones you accept, adjust quantities, then
+approve — or override with your own assessment. *Incident* mode shows the same
+for anything on the board plus the full agent hand-off timeline. *Agent log*
+mode is the running explainability feed.
+
+Keyboard: `A` audio intake · `T` typed intake · `R` review · `D` incident ·
+`L` log · `G` refresh · `/` search stock · `Esc` close dialog ·
+`Ctrl+Enter` submit a typed report.
+
+Updates arrive over Server-Sent Events, so the panels move the instant state
+changes and always describe the same moment — every mutating endpoint returns
+the whole board in one response.
+
+---
+
+## API
+
+Bound to `127.0.0.1`. Interactive docs at `http://127.0.0.1:8000/docs`.
+
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/pipeline` | Audio report (base64) → triaged request |
+| `POST` | `/pipeline/text` | Typed report → triaged request |
+| `GET` | `/board` | Queue + volunteers + inventory + metrics, one snapshot |
+| `GET` | `/events` | Server-Sent Events stream of every change |
+| `GET` | `/queue`, `/requests`, `/requests/{id}`, `/requests/history` | Request reads |
+| `POST` | `/requests/{id}/approve` | Confirm situations, reserve stock, queue |
+| `POST` | `/requests/{id}/override` | Replace the AI assessment |
+| `POST` | `/requests/{id}/cancel` | Withdraw and release held stock |
+| `GET` | `/volunteers` | Roster and live state |
+| `POST` | `/volunteers`, `/volunteers/count` | Add a named volunteer / resize |
+| `PATCH` | `/volunteers/{id}` | Put on or off shift |
+| `DELETE` | `/volunteers/{id}` | Remove from roster |
+| `POST` | `/volunteers/{id}/return` | Back at base: settle stock, close request |
+| `GET` | `/inventory`, `/inventory/low`, `/inventory/buffer`, `/inventory/history` | Stock reads |
+| `POST` | `/inventory`, `/inventory/{item}/stock`, `/inventory/refill` | Stock writes |
+| `DELETE` | `/inventory/{item}` | Remove an item |
+| `GET` | `/metrics` | Counts, wait times, SLA breaches, utilisation |
+| `GET` | `/logs` | Agent hand-off trail |
+| `GET` | `/health`, `/health/detail` | Liveness and per-component capability |
+| `POST` | `/admin/reload`, `/admin/snapshot`, `/admin/reset` | Maintenance |
+
+Errors always come back in one envelope:
+
+```json
+{"error": {"code": "insufficient_stock", "message": "…", "detail": {}}}
+```
+
+Full reference: [`docs/API.md`](docs/API.md).
+
+---
+
+## Project layout
+
+```
+codeforge_hackathon/
 ├── backend/
-│   ├── routers/        pipeline · queue · volunteers · resolve · inventory
-│   ├── agents/         denoiser · intake · retrieval · vagueness · rag_triage · logistics
-│   ├── core/           priority_queue · dispatch_engine · escalation_scheduler · request_store
-│   └── utils/          logger · audio_utils · inventory_manager
-├── data/               inventory.csv · protocols/*.pdf
-├── models/             Ollama model (managed externally)
-└── vector_store/       auto-generated LlamaIndex index
+│   ├── main.py                  entry point (--host --port --reload)
+│   ├── requirements*.txt        core · ml · dev
+│   ├── .env.example             every tunable, documented
+│   ├── aria/
+│   │   ├── config.py            settings from env + .env
+│   │   ├── schemas.py           pydantic contracts (single source of truth)
+│   │   ├── domain/              pure logic: severity, heap key, escalation
+│   │   ├── core/                errors, logging, indexed heap, event bus
+│   │   ├── utils/               time, text matching, audio temp files
+│   │   ├── llm/                 pluggable backends: Ollama · OpenVINO · ONNX
+│   │   ├── agents/              denoise · transcribe · retrieval · vagueness
+│   │   │                        · rules · triage · logistics · pipeline
+│   │   ├── services/            inventory · requests · dispatch · escalation
+│   │   │                        · persistence · metrics · hub
+│   │   └── api/                 FastAPI routes (thin adapters over services)
+│   ├── data/
+│   │   ├── inventory.csv        the stock ledger
+│   │   ├── triage_rules.json    24 rules, ~500 keywords, cited to protocols
+│   │   └── protocols/           26 offline first-aid and operations PDFs
+│   ├── scripts/                 export_npu_model.py · smoke_test.py
+│   └── tests/                   96 offline tests
+├── frontend/
+│   ├── index.html               three-column shell
+│   ├── styles.css               design system, three themes
+│   ├── js/                      util · api · store · views · modals · actions
+│   └── electron/                main.js (lifecycle) · preload.js (bridge)
+└── docs/                        ARCHITECTURE · SETUP · API · CONFIGURATION
 ```
 
 ---
 
-## ⚙️ Quick Setup
+## Development
 
 ```bash
-git clone https://github.com/your-team/emergency-hub.git && cd emergency-hub
-python -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
-python scripts/download_models.py   # downloads Whisper + MiniLM
-ollama pull gemma3:1b               # downloads Gemma via Ollama
-npm install
-npm start
+pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+pytest backend/tests -q          # 96 tests, fully offline, ~2 s
+ruff check backend               # lint
+
+python backend/main.py --reload  # auto-reloading dev server
+python backend/scripts/smoke_test.py --audio noisy_input   # drive a live server
 ```
 
-> ✅ Disable Wi-Fi after setup — zero runtime internet dependency.
+The test suite forces `ARIA_LLM_BACKEND=none`, an empty protocol directory and
+a temporary inventory ledger, so it never touches your data, never loads a
+model and never reaches the network.
+
+### Configuration
+
+Every tunable is an `ARIA_*` environment variable, documented in
+[`backend/.env.example`](backend/.env.example). Useful ones:
+
+```bash
+ARIA_LLM_BACKEND=none          # force the deterministic rule engine
+ARIA_CONFIDENCE_THRESHOLD=0.55 # below this a report is treated as vague
+ARIA_ESCALATION_INTERVAL_SECS=60
+ARIA_VOLUNTEER_COUNT=3
+ARIA_FUZZY_MIN_SCORE=82        # how strict item-name matching is
+ARIA_PERSISTENCE_ENABLED=1     # survive a crash or a flat battery
+```
+
+### Adding a triage rule
+
+`backend/data/triage_rules.json` — no code, no restart beyond
+`POST /admin/reload`:
+
+```json
+{
+  "id": "hypothermia",
+  "label": "Hypothermia",
+  "severity": "HIGH",
+  "strong_keywords": ["hypothermia", "very cold", "shivering+blue"],
+  "keywords": ["cold", "wet clothes", "confused", "slurring"],
+  "travel_time_min": 8,
+  "resolution_time_min": 25,
+  "materials": [{"item": "Thermal Blanket", "quantity": 2}],
+  "instructions": ["Move them somewhere warm and dry", "Remove wet clothing"],
+  "protocols": ["QR-05_signs_of_shock.pdf"]
+}
+```
+
+Matching rules:
+
+- A keyword written with `+` matches when every part appears anywhere in the
+  report, in any order — `face+drooping` catches "her face is drooping" as well
+  as "face drooping".
+- Both the report and the keywords are singularised, so `need blanket` matches
+  "she needs blankets".
+- Matching is whole-phrase, never substring: `cpr` does not match "reprogram".
+- Strong keywords count triple, and a rule needs a score of 2 — one strong
+  keyword, or two ordinary ones — before it offers a diagnosis. One incidental
+  word never triages anyone.
 
 ---
 
-## 📋 Evaluation Alignment
+## Tech stack
 
-| Criteria | How We Address It |
-|----------|-------------------|
-| **Reliability** | Confidence-gated RAG, vagueness resolver, HITL override, exponential escalation prevents starvation, volunteer timer with freeze-on-zero |
-| **Feasibility** | All models CPU-only, full pipeline <25s, heap + escalation in microseconds, single packaged installer |
-| **Impact** | Every person in distress eventually served (no starvation). Explainable AI decisions. HITL keeps humans in control. One laptop runs an entire shelter. |
-| **Open-Source** | Whisper · Gemma · LlamaIndex · noisereduce · Electron · FastAPI · APScheduler — 100% open-source |
+| Layer | Choice | Why |
+|---|---|---|
+| Desktop shell | Electron | Offline install, native file access, one binary |
+| API | FastAPI + Uvicorn | Async, typed, self-documenting, 127.0.0.1 only |
+| Contracts | Pydantic v2 | Validation at the boundary; LLM output coerced, never trusted |
+| Denoising | noisereduce (DNS64 optional) | CPU-only, fast; optional deep model when quality matters |
+| Speech-to-text | openai-whisper `base` | Best offline accuracy per MB on CPU |
+| Retrieval | LlamaIndex + all-MiniLM-L6-v2 | Small, fast, good enough for 26 documents; index persisted |
+| LLM | Ollama (Gemma 3 1B), OpenVINO/ONNX on NPU | Swappable behind one interface; all optional |
+| Deterministic triage | Custom rule engine | Works with nothing installed; fully explainable |
+| Queue | Indexed max-heap, lazy deletion | O(log n) update; no rebuild per escalation tick |
+| Scheduling | Daemon thread | One less dependency than APScheduler; deterministic shutdown |
+| Inventory | stdlib `csv` + atomic writes | A 20-row ledger does not need pandas |
+| Live updates | Server-Sent Events | One stream instead of three pollers |
+| Persistence | Atomic JSON snapshots | The board survives a crash or a flat battery |
+
+Everything is open source and runs on CPU.
 
 ---
 
-## 📄 License
+## Design decisions worth knowing
+
+**Nothing is committed without a human.** The models rank and propose; the
+shelter manager decides. No stock is reserved and no volunteer moves until
+someone ticks a box.
+
+**Degradation is a feature, not an error path.** Each capability that is
+missing removes exactly what it provides and records why on the request. The
+only hard failure is audio intake with no speech model — and that error names
+the text endpoint as the way through.
+
+**The volunteer timer never frees anyone automatically.** It counts down, then
+counts overdue. Only the shelter head clicking *Back at base* frees a
+volunteer, because a timer hitting zero is not evidence that anyone came home.
+
+**Over-triage beats under-triage.** Unparseable severity defaults to HIGH; on
+merge conflicts the more severe assessment wins; ties in the rule engine go to
+the more severe rule.
+
+**Everything is auditable.** Every agent hand-off, every stock movement and
+every decision is recorded with a timestamp and a reason, visible in the UI and
+in `backend/logs/`.
+
+---
+
+## Documentation
+
+| Document | Contents |
+|---|---|
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Layers, data flow, concurrency, state model |
+| [`docs/SETUP.md`](docs/SETUP.md) | Full install per platform, models, troubleshooting |
+| [`docs/API.md`](docs/API.md) | Every endpoint with request and response examples |
+| [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) | Every setting and how to tune it |
+
+---
+
+## License
+
 MIT — open for humanitarian use and adaptation.

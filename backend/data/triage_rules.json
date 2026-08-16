@@ -1,0 +1,1417 @@
+{
+  "version": 1,
+  "description": "Deterministic triage catalogue. Each rule maps report language onto a condition, a severity, the supplies a volunteer must carry and the protocol document that governs it. Used as the offline fallback when no LLM is reachable, and merged with LLM output otherwise. Item names must match data/inventory.csv.",
+  "scoring": "strong_keywords count triple. confidence = min(0.95, 0.30 + 0.09 x score) plus up to +0.10 when RAG retrieved a cited protocol. A keyword written with '+' matches when every part appears anywhere in the report, in any order ('face+drooping' matches 'her face is drooping'). A rule needs score >= 2 (one strong keyword, or two ordinary ones) before it is offered as a diagnosis.",
+  "rules": [
+    {
+      "id": "cardiac-arrest",
+      "label": "Cardiac arrest / unresponsive casualty",
+      "severity": "CRITICAL",
+      "strong_keywords": [
+        "cardiac arrest",
+        "chest+not+moving",
+        "heart attack",
+        "heart+stopped",
+        "no heartbeat",
+        "no pulse",
+        "no+pulse",
+        "not breathing",
+        "not+breathing",
+        "stopped breathing"
+      ],
+      "keywords": [
+        "blue lips",
+        "chest pain",
+        "clutching chest",
+        "cold to touch",
+        "collapsed",
+        "cpr",
+        "face down",
+        "limp",
+        "not moving",
+        "unconscious",
+        "unresponsive"
+      ],
+      "travel_time_min": 5,
+      "resolution_time_min": 25,
+      "materials": [
+        {
+          "item": "AED",
+          "quantity": 1
+        },
+        {
+          "item": "CPR Mask",
+          "quantity": 1
+        },
+        {
+          "item": "Nitrile Gloves (pair)",
+          "quantity": 1
+        }
+      ],
+      "instructions": [
+        "Confirm the scene is safe, then check response and breathing for no more than 10 seconds.",
+        "Send a second person for the AED immediately; do not leave the casualty alone if avoidable.",
+        "Start chest compressions: 30 compressions at 100-120/min, 5-6 cm deep, then 2 rescue breaths with the CPR mask.",
+        "Attach the AED as soon as it arrives, follow its voice prompts and stand clear for any shock.",
+        "Continue until the casualty breathes normally or professional help takes over. Report the handover to base."
+      ],
+      "protocols": [
+        "QR-02_CPR_AED.pdf",
+        "MED-04_cardiac_stroke.pdf",
+        "OPS-06_handoff_emergency_services.pdf"
+      ],
+      "notes": "Survival falls roughly 10% per minute without CPR — this rule always outranks queue position."
+    },
+    {
+      "id": "stroke",
+      "label": "Suspected stroke",
+      "severity": "CRITICAL",
+      "strong_keywords": [
+        "arm+weak+sudden",
+        "drooping",
+        "face drooping",
+        "face+droop",
+        "face+drooping",
+        "one side of the body",
+        "slurred",
+        "slurred speech",
+        "speech+slurred",
+        "stroke"
+      ],
+      "keywords": [
+        "cannot lift arm",
+        "cannot speak",
+        "cant speak",
+        "confused",
+        "dribbling",
+        "drooling",
+        "numb",
+        "one side weak",
+        "sudden confusion",
+        "sudden headache",
+        "vision loss",
+        "weak arm"
+      ],
+      "travel_time_min": 6,
+      "resolution_time_min": 20,
+      "materials": [
+        {
+          "item": "Blood Pressure Monitor",
+          "quantity": 1
+        },
+        {
+          "item": "Thermal Blanket",
+          "quantity": 1
+        },
+        {
+          "item": "Nitrile Gloves (pair)",
+          "quantity": 1
+        }
+      ],
+      "instructions": [
+        "Run the FAST check: Face droop, Arm weakness, Speech difficulty, Time of onset.",
+        "Record the exact time symptoms started — treatment decisions depend on it.",
+        "Keep the casualty still, head and shoulders slightly raised, and give nothing by mouth.",
+        "Monitor breathing and be ready to move to the recovery position if consciousness drops.",
+        "Flag for immediate evacuation at the next handover window."
+      ],
+      "protocols": [
+        "MED-04_cardiac_stroke.pdf",
+        "QR-04_recovery_position.pdf"
+      ]
+    },
+    {
+      "id": "severe-bleeding",
+      "label": "Severe haemorrhage",
+      "severity": "CRITICAL",
+      "strong_keywords": [
+        "arterial bleeding",
+        "bleeding heavily",
+        "bleeding+heavily",
+        "bleeding+wont+stop",
+        "blood+everywhere",
+        "lot of blood",
+        "pumping+blood",
+        "soaked+blood",
+        "spurting",
+        "tourniquet",
+        "wont stop bleeding"
+      ],
+      "keywords": [
+        "amputation",
+        "bandage soaked",
+        "bleeding",
+        "blood",
+        "deep cut",
+        "gash",
+        "laceration",
+        "pale from blood loss",
+        "pressure not working",
+        "severed",
+        "stab"
+      ],
+      "travel_time_min": 5,
+      "resolution_time_min": 20,
+      "materials": [
+        {
+          "item": "Bandage Roll",
+          "quantity": 2
+        },
+        {
+          "item": "Sterile Gauze",
+          "quantity": 4
+        },
+        {
+          "item": "Nitrile Gloves (pair)",
+          "quantity": 2
+        },
+        {
+          "item": "Thermal Blanket",
+          "quantity": 1
+        }
+      ],
+      "instructions": [
+        "Put on gloves before any contact.",
+        "Apply firm direct pressure over the wound with sterile gauze; add layers on top rather than removing soaked ones.",
+        "Elevate the limb if no fracture is suspected.",
+        "If bleeding is not controlled and the wound is on a limb, apply a tourniquet high and tight, and write the time on the casualty's skin.",
+        "Treat for shock: keep them warm and lying flat with legs raised."
+      ],
+      "protocols": [
+        "MED-01_wounds_bleeding.pdf",
+        "QR-03_tourniquet.pdf",
+        "QR-05_signs_of_shock.pdf"
+      ]
+    },
+    {
+      "id": "choking",
+      "label": "Choking / obstructed airway",
+      "severity": "CRITICAL",
+      "strong_keywords": [
+        "airway+blocked",
+        "cannot breathe",
+        "cannot+swallow",
+        "cant breathe",
+        "cant+breathe",
+        "choking",
+        "food+throat",
+        "heimlich",
+        "something stuck in throat",
+        "stuck+throat"
+      ],
+      "keywords": [
+        "clutching throat",
+        "coughing",
+        "food stuck",
+        "gasping",
+        "going blue",
+        "hands at throat",
+        "no sound",
+        "silent cough",
+        "swallowed",
+        "throat",
+        "turning blue"
+      ],
+      "travel_time_min": 4,
+      "resolution_time_min": 10,
+      "materials": [
+        {
+          "item": "CPR Mask",
+          "quantity": 1
+        },
+        {
+          "item": "Nitrile Gloves (pair)",
+          "quantity": 1
+        }
+      ],
+      "instructions": [
+        "Ask 'Are you choking?' — if they can cough forcefully, encourage coughing and do not intervene.",
+        "For an ineffective cough: 5 sharp back blows between the shoulder blades.",
+        "Then 5 abdominal thrusts (Heimlich). Alternate 5 and 5.",
+        "If they become unresponsive, lower them to the ground and start CPR immediately.",
+        "Anyone who received abdominal thrusts must be assessed afterwards even if they recover."
+      ],
+      "protocols": [
+        "QR-06_heimlich_choking.pdf",
+        "QR-02_CPR_AED.pdf"
+      ]
+    },
+    {
+      "id": "anaphylaxis",
+      "label": "Anaphylaxis / severe allergic reaction",
+      "severity": "CRITICAL",
+      "strong_keywords": [
+        "allergic reaction",
+        "allergic+reaction",
+        "anaphylaxis",
+        "bee sting reaction",
+        "epipen",
+        "face+swelling",
+        "swollen throat",
+        "throat closing",
+        "throat+closing",
+        "tongue+swollen"
+      ],
+      "keywords": [
+        "allergy",
+        "hives",
+        "itchy all over",
+        "known allergy",
+        "lips swollen",
+        "peanut",
+        "rash",
+        "sting",
+        "struggling after eating",
+        "swelling",
+        "wheezing"
+      ],
+      "travel_time_min": 5,
+      "resolution_time_min": 20,
+      "materials": [
+        {
+          "item": "EpiPen",
+          "quantity": 1
+        },
+        {
+          "item": "Oxygen Mask",
+          "quantity": 1
+        },
+        {
+          "item": "Nitrile Gloves (pair)",
+          "quantity": 1
+        }
+      ],
+      "instructions": [
+        "Use the auto-injector into the outer thigh without delay — hold for 3 seconds.",
+        "Lay the casualty flat with legs raised; sit them up only if breathing is easier that way.",
+        "Note the injection time. A second dose may be needed after 5-15 minutes if there is no improvement.",
+        "Give oxygen if available and monitor breathing continuously.",
+        "Every anaphylaxis case needs evacuation — biphasic reactions can occur hours later."
+      ],
+      "protocols": [
+        "MED-06_diabetic_anaphylaxis.pdf",
+        "MED-19_animal_bites_stings.pdf"
+      ]
+    },
+    {
+      "id": "respiratory-drowning",
+      "label": "Respiratory distress / near drowning",
+      "severity": "CRITICAL",
+      "strong_keywords": [
+        "breathing+fast",
+        "cannot+breathe+properly",
+        "drowning",
+        "not breathing well",
+        "not+breathing+properly",
+        "pulled from water",
+        "pulled+water",
+        "struggling to breathe",
+        "struggling+breathe",
+        "suffocating"
+      ],
+      "keywords": [
+        "asthma",
+        "blue lips",
+        "breathing",
+        "chest tight",
+        "coughing up water",
+        "coughing water",
+        "gasping",
+        "gurgling",
+        "inhaler",
+        "smoke inhalation",
+        "water in lungs",
+        "wheezing"
+      ],
+      "travel_time_min": 6,
+      "resolution_time_min": 25,
+      "materials": [
+        {
+          "item": "Oxygen Mask",
+          "quantity": 1
+        },
+        {
+          "item": "CPR Mask",
+          "quantity": 1
+        },
+        {
+          "item": "Thermal Blanket",
+          "quantity": 1
+        }
+      ],
+      "instructions": [
+        "Move the casualty to fresh air and a warm, sheltered spot.",
+        "Sit them upright if conscious; use the recovery position if not.",
+        "Give oxygen if available and help with their own inhaler if they carry one.",
+        "Remove wet clothing and wrap in a thermal blanket — near-drowning casualties lose heat fast.",
+        "Watch for deterioration for at least an hour; secondary drowning presents late."
+      ],
+      "protocols": [
+        "MED-05_respiratory_drowning.pdf",
+        "QR-04_recovery_position.pdf"
+      ]
+    },
+    {
+      "id": "crush-injury",
+      "label": "Crush injury / crush syndrome risk",
+      "severity": "CRITICAL",
+      "strong_keywords": [
+        "arm+crushed",
+        "beam fell on",
+        "crushed",
+        "crushed+under",
+        "leg+crushed",
+        "pinned under",
+        "pinned+under",
+        "rubble on",
+        "trapped under",
+        "trapped+under"
+      ],
+      "keywords": [
+        "arm trapped",
+        "cannot lift off",
+        "collapsed wall",
+        "concrete",
+        "heavy",
+        "leg trapped",
+        "numb below",
+        "vehicle",
+        "weight on chest"
+      ],
+      "travel_time_min": 12,
+      "resolution_time_min": 45,
+      "materials": [
+        {
+          "item": "Stretcher",
+          "quantity": 1
+        },
+        {
+          "item": "Thermal Blanket",
+          "quantity": 1
+        },
+        {
+          "item": "Bandage Roll",
+          "quantity": 2
+        },
+        {
+          "item": "Water Bottle 500ml",
+          "quantity": 2
+        }
+      ],
+      "instructions": [
+        "Do NOT release a crushing weight that has been in place over 15 minutes until you are ready to manage the release — toxins flood the circulation.",
+        "Keep the casualty hydrated and warm while trapped, and keep talking to them.",
+        "Call for professional extrication; record how long they have been trapped.",
+        "Once released, monitor for shock and irregular heartbeat continuously.",
+        "Immobilise injured limbs and move on the stretcher, not on foot."
+      ],
+      "protocols": [
+        "MED-20_crush_syndrome.pdf",
+        "SIT-01_trapped_in_structure.pdf",
+        "QR-05_signs_of_shock.pdf"
+      ]
+    },
+    {
+      "id": "trapped-structure",
+      "label": "Person trapped in a structure",
+      "severity": "CRITICAL",
+      "strong_keywords": [
+        "building+collapsed",
+        "buried",
+        "buried+rubble",
+        "cannot get out",
+        "cannot+get+out",
+        "cant get out",
+        "collapsed building",
+        "stuck+under+debris",
+        "trapped",
+        "trapped+inside",
+        "under rubble"
+      ],
+      "keywords": [
+        "aftershock",
+        "cannot reach them",
+        "collapse",
+        "debris",
+        "earthquake",
+        "roof came down",
+        "shouting from inside",
+        "stuck inside",
+        "wall fell"
+      ],
+      "travel_time_min": 15,
+      "resolution_time_min": 60,
+      "materials": [
+        {
+          "item": "Flashlight",
+          "quantity": 2
+        },
+        {
+          "item": "Stretcher",
+          "quantity": 1
+        },
+        {
+          "item": "Thermal Blanket",
+          "quantity": 1
+        },
+        {
+          "item": "Water Bottle 500ml",
+          "quantity": 2
+        }
+      ],
+      "instructions": [
+        "Do not enter an unstable structure — assess from outside and mark the location.",
+        "Establish voice contact and keep it; note how many people are inside and their condition.",
+        "Shut off utilities if you can do so safely before any digging starts.",
+        "Escalate to the search and rescue team; volunteers support, they do not tunnel.",
+        "Log the time of the collapse and any aftershock activity."
+      ],
+      "protocols": [
+        "SIT-01_trapped_in_structure.pdf",
+        "SIT-06_earthquake_response.pdf",
+        "OPS-06_handoff_emergency_services.pdf"
+      ]
+    },
+    {
+      "id": "head-spine",
+      "label": "Head or spinal injury",
+      "severity": "HIGH",
+      "strong_keywords": [
+        "cannot feel legs",
+        "cannot+feel+legs",
+        "cannot+move+legs",
+        "cant feel legs",
+        "fell+head",
+        "head injury",
+        "head+injury",
+        "hit her head",
+        "hit his head",
+        "hit+head",
+        "neck injury",
+        "neck+pain+after+fall",
+        "spine"
+      ],
+      "keywords": [
+        "blackout",
+        "bleeding from ear",
+        "concussion",
+        "confused",
+        "dizzy",
+        "fell from",
+        "pupils",
+        "slurring after fall",
+        "stiff neck",
+        "tingling",
+        "unequal pupils",
+        "vomiting after fall"
+      ],
+      "travel_time_min": 8,
+      "resolution_time_min": 30,
+      "materials": [
+        {
+          "item": "Neck Brace",
+          "quantity": 1
+        },
+        {
+          "item": "Stretcher",
+          "quantity": 1
+        },
+        {
+          "item": "Sterile Gauze",
+          "quantity": 2
+        },
+        {
+          "item": "Thermal Blanket",
+          "quantity": 1
+        }
+      ],
+      "instructions": [
+        "Assume a spinal injury after any fall from height or blow to the head.",
+        "Support the head in the position found; fit the collar only with a second pair of hands.",
+        "Do not move the casualty unless they are in immediate danger.",
+        "Record consciousness level every 5 minutes — deterioration is the warning sign.",
+        "Move on a stretcher with the head and body kept in line."
+      ],
+      "protocols": [
+        "MED-03_head_spine.pdf",
+        "QR-04_recovery_position.pdf"
+      ]
+    },
+    {
+      "id": "fracture",
+      "label": "Suspected fracture",
+      "severity": "HIGH",
+      "strong_keywords": [
+        "arm looks wrong",
+        "arm+wrong",
+        "bone sticking out",
+        "bone+sticking",
+        "broken arm",
+        "broken leg",
+        "broken+arm",
+        "broken+leg",
+        "cannot+put+weight",
+        "fracture",
+        "leg looks wrong",
+        "leg+twisted",
+        "leg+wrong"
+      ],
+      "keywords": [
+        "cannot move arm",
+        "cannot walk",
+        "cant walk",
+        "deformed",
+        "fell",
+        "grinding sound",
+        "hanging limb",
+        "hip pain after fall",
+        "snapped",
+        "swollen",
+        "swollen ankle",
+        "twisted"
+      ],
+      "travel_time_min": 8,
+      "resolution_time_min": 25,
+      "materials": [
+        {
+          "item": "Leg Splint",
+          "quantity": 1
+        },
+        {
+          "item": "Bandage Roll",
+          "quantity": 2
+        },
+        {
+          "item": "Sterile Gauze",
+          "quantity": 2
+        },
+        {
+          "item": "Thermal Blanket",
+          "quantity": 1
+        }
+      ],
+      "instructions": [
+        "Do not attempt to straighten the limb — immobilise it in the position found.",
+        "Pad around the injury, then apply the splint above and below the fracture site.",
+        "Check circulation beyond the splint (warmth, colour, pulse) before and after strapping.",
+        "Cover any open wound with sterile gauze before splinting.",
+        "Treat for shock and keep the casualty warm while awaiting transport."
+      ],
+      "protocols": [
+        "QR-01_splint_application.pdf",
+        "MED-01_wounds_bleeding.pdf",
+        "QR-05_signs_of_shock.pdf"
+      ]
+    },
+    {
+      "id": "burns",
+      "label": "Burn injury",
+      "severity": "HIGH",
+      "strong_keywords": [
+        "boiling water",
+        "burn",
+        "burn+arm",
+        "burn+face",
+        "burn+hand",
+        "burn+leg",
+        "burnt",
+        "fire+skin",
+        "hot+oil",
+        "on fire",
+        "scalded"
+      ],
+      "keywords": [
+        "blister",
+        "chemical",
+        "cooking fire",
+        "electrical",
+        "flames",
+        "hot water",
+        "kettle",
+        "red raw",
+        "scald",
+        "singed",
+        "skin peeling",
+        "skin white",
+        "smoke",
+        "steam",
+        "stove"
+      ],
+      "travel_time_min": 7,
+      "resolution_time_min": 25,
+      "materials": [
+        {
+          "item": "Sterile Gauze",
+          "quantity": 4
+        },
+        {
+          "item": "Water Bottle 500ml",
+          "quantity": 3
+        },
+        {
+          "item": "Nitrile Gloves (pair)",
+          "quantity": 1
+        },
+        {
+          "item": "Thermal Blanket",
+          "quantity": 1
+        }
+      ],
+      "instructions": [
+        "Cool the burn with clean running water for at least 20 minutes. Do not use ice.",
+        "Remove jewellery and loose clothing from the area before swelling starts; leave anything stuck to the skin.",
+        "Cover loosely with sterile, non-fluffy dressing or clean cling film.",
+        "Never apply creams, butter or ointments, and never burst blisters.",
+        "Burns to the face, hands, feet, genitals or larger than the casualty's palm need evacuation."
+      ],
+      "protocols": [
+        "MED-02_burns.pdf",
+        "MED-01_wounds_bleeding.pdf"
+      ]
+    },
+    {
+      "id": "shock",
+      "label": "Shock",
+      "severity": "HIGH",
+      "strong_keywords": [
+        "cold and sweaty",
+        "cold+clammy",
+        "going into shock",
+        "going+into+shock",
+        "pale and clammy",
+        "pale+clammy",
+        "pulse+racing",
+        "rapid pulse",
+        "skin+grey"
+      ],
+      "keywords": [
+        "confused",
+        "dizzy",
+        "faint",
+        "grey",
+        "restless",
+        "shallow breathing",
+        "shivering",
+        "sweating heavily",
+        "thirsty",
+        "very thirsty",
+        "weak",
+        "yawning"
+      ],
+      "travel_time_min": 7,
+      "resolution_time_min": 20,
+      "materials": [
+        {
+          "item": "Thermal Blanket",
+          "quantity": 1
+        },
+        {
+          "item": "Blood Pressure Monitor",
+          "quantity": 1
+        },
+        {
+          "item": "Water Bottle 500ml",
+          "quantity": 1
+        }
+      ],
+      "instructions": [
+        "Lay the casualty down and raise their legs above heart level unless a fracture prevents it.",
+        "Loosen tight clothing and cover them with a blanket — insulate from the ground too.",
+        "Do not give food or drink; moisten the lips if they are thirsty.",
+        "Reassure them and keep monitoring pulse, breathing and responsiveness.",
+        "Find and treat the underlying cause — shock is a symptom, not a diagnosis."
+      ],
+      "protocols": [
+        "QR-05_signs_of_shock.pdf",
+        "QR-04_recovery_position.pdf"
+      ]
+    },
+    {
+      "id": "diabetic-emergency",
+      "label": "Diabetic emergency",
+      "severity": "HIGH",
+      "strong_keywords": [
+        "blood sugar",
+        "blood+sugar",
+        "diabetic",
+        "diabetic+confused",
+        "hypo",
+        "hypoglycaemia",
+        "hypoglycemia",
+        "insulin",
+        "insulin+missing",
+        "needs+sugar"
+      ],
+      "keywords": [
+        "confused",
+        "drowsy",
+        "fainted",
+        "fruity breath",
+        "glucose",
+        "needs sugar",
+        "not eaten all day",
+        "shaky",
+        "sweating",
+        "sweet breath",
+        "trembling"
+      ],
+      "travel_time_min": 6,
+      "resolution_time_min": 15,
+      "materials": [
+        {
+          "item": "Glucose Tablets",
+          "quantity": 2
+        },
+        {
+          "item": "Insulin Kit",
+          "quantity": 1
+        },
+        {
+          "item": "Energy Bar",
+          "quantity": 1
+        }
+      ],
+      "instructions": [
+        "If the casualty is conscious and can swallow, give fast-acting sugar (glucose tablets or a sweet drink).",
+        "Follow up with longer-acting carbohydrate such as an energy bar once they improve.",
+        "Never give anything by mouth to someone who is drowsy or unresponsive — use the recovery position.",
+        "Recheck after 10 minutes; repeat sugar once if there is no improvement.",
+        "Record what was given and when for the medical handover."
+      ],
+      "protocols": [
+        "MED-06_diabetic_anaphylaxis.pdf",
+        "QR-04_recovery_position.pdf"
+      ]
+    },
+    {
+      "id": "abdominal-injury",
+      "label": "Abdominal injury",
+      "severity": "HIGH",
+      "strong_keywords": [
+        "abdomen+swollen",
+        "abdominal",
+        "hit+stomach",
+        "impaled",
+        "kicked in the stomach",
+        "kicked+stomach",
+        "stomach injury",
+        "stomach+hard",
+        "stomach+injury"
+      ],
+      "keywords": [
+        "belly",
+        "blood in vomit",
+        "bruised belly",
+        "bruising",
+        "cannot straighten",
+        "internal bleeding",
+        "rigid abdomen",
+        "stomach pain",
+        "vomiting blood"
+      ],
+      "travel_time_min": 8,
+      "resolution_time_min": 25,
+      "materials": [
+        {
+          "item": "Sterile Gauze",
+          "quantity": 4
+        },
+        {
+          "item": "Bandage Roll",
+          "quantity": 2
+        },
+        {
+          "item": "Stretcher",
+          "quantity": 1
+        },
+        {
+          "item": "Thermal Blanket",
+          "quantity": 1
+        }
+      ],
+      "instructions": [
+        "Lay the casualty on their back with knees bent to relax the abdominal wall.",
+        "Cover protruding organs with a moist sterile dressing — never push them back in.",
+        "Leave any impaling object in place and pad around it.",
+        "Give nothing by mouth and monitor closely for shock.",
+        "Evacuate: internal bleeding cannot be managed at the shelter."
+      ],
+      "protocols": [
+        "MED-17_abdominal_injuries.pdf",
+        "QR-05_signs_of_shock.pdf"
+      ]
+    },
+    {
+      "id": "wound-infection",
+      "label": "Infected wound / suspected sepsis",
+      "severity": "HIGH",
+      "strong_keywords": [
+        "infected wound",
+        "pus",
+        "red streaks",
+        "red+streaks",
+        "sepsis",
+        "wound smells",
+        "wound+infected",
+        "wound+smells",
+        "wound+worse"
+      ],
+      "keywords": [
+        "dressing wet",
+        "fever",
+        "fever with wound",
+        "getting worse",
+        "hot around wound",
+        "hot to touch",
+        "old wound",
+        "shivering",
+        "swollen wound"
+      ],
+      "travel_time_min": 9,
+      "resolution_time_min": 20,
+      "materials": [
+        {
+          "item": "Antiseptic Wipes",
+          "quantity": 4
+        },
+        {
+          "item": "Sterile Gauze",
+          "quantity": 4
+        },
+        {
+          "item": "Bandage Roll",
+          "quantity": 1
+        },
+        {
+          "item": "Nitrile Gloves (pair)",
+          "quantity": 1
+        }
+      ],
+      "instructions": [
+        "Take a temperature and note it with the time.",
+        "Clean around the wound outwards from the centre; do not scrub the wound bed.",
+        "Redress with sterile gauze and mark the edge of any redness with a pen to track spread.",
+        "Red streaks spreading from the wound, confusion or a fast breathing rate mean sepsis — escalate immediately.",
+        "Record the dressing change in the casualty's card."
+      ],
+      "protocols": [
+        "MED-18_wound_infection_sepsis.pdf",
+        "MED-01_wounds_bleeding.pdf"
+      ]
+    },
+    {
+      "id": "violence-assault",
+      "label": "Violence or assault on site",
+      "severity": "HIGH",
+      "strong_keywords": [
+        "assault",
+        "assaulted",
+        "attacked",
+        "beaten",
+        "being+threatened",
+        "fight+broke+out",
+        "fighting",
+        "knife",
+        "weapon"
+      ],
+      "keywords": [
+        "aggressive",
+        "hit",
+        "kicked",
+        "police",
+        "punched",
+        "screaming for help",
+        "shouting",
+        "threatening",
+        "unsafe",
+        "violent"
+      ],
+      "travel_time_min": 6,
+      "resolution_time_min": 30,
+      "materials": [
+        {
+          "item": "Sterile Gauze",
+          "quantity": 2
+        },
+        {
+          "item": "Bandage Roll",
+          "quantity": 1
+        },
+        {
+          "item": "Nitrile Gloves (pair)",
+          "quantity": 1
+        }
+      ],
+      "instructions": [
+        "Volunteer safety first: do not enter an active incident. Withdraw and report.",
+        "Alert the shelter security lead and, where available, the police liaison.",
+        "Treat casualties only once the scene is secure.",
+        "Preserve the scene where a crime may have occurred and record what you saw factually.",
+        "Offer the casualty a private space and support after treatment."
+      ],
+      "protocols": [
+        "SIT-07_violence_assault.pdf",
+        "OPS-06_handoff_emergency_services.pdf"
+      ]
+    },
+    {
+      "id": "animal-bite",
+      "label": "Animal bite or sting",
+      "severity": "MEDIUM",
+      "strong_keywords": [
+        "animal bite",
+        "bite+wound",
+        "bitten by",
+        "bitten+by",
+        "dog bite",
+        "dog+bite",
+        "scorpion",
+        "snake bite",
+        "snake+bite",
+        "stung by",
+        "stung+by"
+      ],
+      "keywords": [
+        "bite",
+        "fang",
+        "insect",
+        "puncture",
+        "rabies",
+        "spider",
+        "sting",
+        "stray dog",
+        "swelling",
+        "swelling spreading",
+        "teeth marks"
+      ],
+      "travel_time_min": 9,
+      "resolution_time_min": 20,
+      "materials": [
+        {
+          "item": "Antiseptic Wipes",
+          "quantity": 3
+        },
+        {
+          "item": "Sterile Gauze",
+          "quantity": 2
+        },
+        {
+          "item": "Bandage Roll",
+          "quantity": 1
+        },
+        {
+          "item": "Nitrile Gloves (pair)",
+          "quantity": 1
+        }
+      ],
+      "instructions": [
+        "Wash the wound with clean water and soap for several minutes.",
+        "Apply antiseptic and a dry dressing; do not seal a deep puncture wound.",
+        "For a snake bite: keep the casualty still, immobilise the limb below heart level, do not cut or suck the wound.",
+        "Record the animal, the time and any description — it matters for rabies and antivenom decisions.",
+        "Watch for an allergic reaction; escalate to the anaphylaxis protocol if swelling spreads."
+      ],
+      "protocols": [
+        "MED-19_animal_bites_stings.pdf",
+        "MED-06_diabetic_anaphylaxis.pdf"
+      ]
+    },
+    {
+      "id": "dental-jaw",
+      "label": "Dental or jaw trauma",
+      "severity": "MEDIUM",
+      "strong_keywords": [
+        "broken jaw",
+        "cannot+close+mouth",
+        "jaw injury",
+        "jaw+broken",
+        "knocked out tooth",
+        "knocked+out+teeth",
+        "teeth+knocked",
+        "teeth+out",
+        "tooth knocked",
+        "tooth+broken",
+        "tooth+knocked",
+        "tooth+out"
+      ],
+      "keywords": [
+        "bleeding gum",
+        "cannot bite",
+        "cannot close mouth",
+        "chipped",
+        "gum",
+        "jaw locked",
+        "loose teeth",
+        "mouth bleeding",
+        "mouth full of blood",
+        "teeth",
+        "tooth",
+        "toothache"
+      ],
+      "travel_time_min": 10,
+      "resolution_time_min": 15,
+      "materials": [
+        {
+          "item": "Sterile Gauze",
+          "quantity": 3
+        },
+        {
+          "item": "Nitrile Gloves (pair)",
+          "quantity": 1
+        },
+        {
+          "item": "Water Bottle 500ml",
+          "quantity": 1
+        }
+      ],
+      "instructions": [
+        "Control bleeding with a rolled gauze pad the casualty bites down on for 10 minutes.",
+        "Handle a knocked-out adult tooth by the crown only; keep it in milk or the casualty's saliva.",
+        "Support a suspected broken jaw with a soft pad — do not bandage it shut in case of vomiting.",
+        "Give nothing hot to eat or drink.",
+        "Refer for dental care at the next available window; a re-implantable tooth is time critical."
+      ],
+      "protocols": [
+        "MED-16_dental_jaw_trauma.pdf"
+      ]
+    },
+    {
+      "id": "dehydration-heat",
+      "label": "Dehydration / heat exhaustion",
+      "severity": "MEDIUM",
+      "strong_keywords": [
+        "dehydrated",
+        "heat exhaustion",
+        "heat+exhaustion",
+        "heatstroke",
+        "no water for",
+        "no+water+for",
+        "not+drinking",
+        "very+dehydrated"
+      ],
+      "keywords": [
+        "cramps",
+        "dark urine",
+        "dizzy",
+        "dizzy and weak",
+        "dry mouth",
+        "exhausted",
+        "fainted in the heat",
+        "headache",
+        "hot",
+        "hot to touch",
+        "not urinating",
+        "thirsty",
+        "tired",
+        "weak"
+      ],
+      "travel_time_min": 10,
+      "resolution_time_min": 15,
+      "materials": [
+        {
+          "item": "Water Bottle 500ml",
+          "quantity": 2
+        },
+        {
+          "item": "Energy Bar",
+          "quantity": 1
+        },
+        {
+          "item": "Thermal Blanket",
+          "quantity": 1
+        }
+      ],
+      "instructions": [
+        "Move the person to shade or a cool part of the shelter and loosen clothing.",
+        "Give small, frequent sips of water — a large volume at once will be vomited back.",
+        "Cool the skin with damp cloths at the neck, armpits and groin.",
+        "Hot dry skin, confusion or collapse means heatstroke: escalate to CRITICAL and cool aggressively.",
+        "Recheck in 30 minutes and log fluid intake."
+      ],
+      "protocols": [
+        "OPS-07_volunteer_welfare.pdf",
+        "QR-05_signs_of_shock.pdf"
+      ]
+    },
+    {
+      "id": "mental-health",
+      "label": "Acute mental health crisis",
+      "severity": "MEDIUM",
+      "strong_keywords": [
+        "cannot+calm+down",
+        "hallucinating",
+        "hyperventilating",
+        "mental health",
+        "panic attack",
+        "panic+attack",
+        "self harm",
+        "self+harm",
+        "suicidal",
+        "wants+to+die"
+      ],
+      "keywords": [
+        "anxious",
+        "cannot calm",
+        "cannot stop crying",
+        "crying",
+        "distressed",
+        "lost family",
+        "rocking",
+        "screaming",
+        "shaking",
+        "trauma",
+        "will not respond",
+        "withdrawn"
+      ],
+      "travel_time_min": 8,
+      "resolution_time_min": 35,
+      "materials": [
+        {
+          "item": "Thermal Blanket",
+          "quantity": 1
+        },
+        {
+          "item": "Water Bottle 500ml",
+          "quantity": 1
+        }
+      ],
+      "instructions": [
+        "Approach calmly, introduce yourself, and move to a quieter space if they agree.",
+        "Listen without judgement. Do not argue with what they are experiencing.",
+        "Guide slow breathing for a panic attack: in for 4, hold 4, out for 6.",
+        "Never leave someone at risk of self-harm alone — stay or arrange cover before you go.",
+        "Hand over to the welfare lead and record the outcome discreetly."
+      ],
+      "protocols": [
+        "MED-21_acute_mental_health.pdf",
+        "OPS-07_volunteer_welfare.pdf"
+      ]
+    },
+    {
+      "id": "contamination",
+      "label": "Food or water contamination",
+      "severity": "MEDIUM",
+      "strong_keywords": [
+        "bad water",
+        "contaminated water",
+        "food poisoning",
+        "food+poisoning",
+        "many+people+sick",
+        "people+sick",
+        "people+vomiting",
+        "sewage",
+        "sick+after+eating",
+        "vomiting+ate",
+        "vomiting+eating",
+        "water+contaminated",
+        "water+smells"
+      ],
+      "keywords": [
+        "ate the same",
+        "diarrhea",
+        "diarrhoea",
+        "many people sick",
+        "runs",
+        "same food",
+        "sick after eating",
+        "smells bad",
+        "stomach bug",
+        "stomach cramps",
+        "tank",
+        "unwell after",
+        "vomiting",
+        "vomiting and diarrhoea",
+        "well water"
+      ],
+      "travel_time_min": 12,
+      "resolution_time_min": 30,
+      "materials": [
+        {
+          "item": "Water Bottle 500ml",
+          "quantity": 4
+        },
+        {
+          "item": "Nitrile Gloves (pair)",
+          "quantity": 2
+        },
+        {
+          "item": "Antiseptic Wipes",
+          "quantity": 4
+        }
+      ],
+      "instructions": [
+        "Isolate the suspect food or water source immediately and label it so nobody else uses it.",
+        "Record who consumed it and when — an outbreak in a shelter spreads within hours.",
+        "Rehydrate affected people with clean water in small sips.",
+        "Enforce hand hygiene around the affected area and arrange separate sanitation if possible.",
+        "Report to the shelter lead; this is a population-level risk, not a single casualty."
+      ],
+      "protocols": [
+        "SIT-08_food_water_contamination.pdf"
+      ]
+    },
+    {
+      "id": "minor-wound",
+      "label": "Minor wound or graze",
+      "severity": "LOW",
+      "strong_keywords": [
+        "graze",
+        "grazed",
+        "little+cut",
+        "minor cut",
+        "minor+cut",
+        "scrape",
+        "small cut",
+        "small+cut"
+      ],
+      "keywords": [
+        "bandage",
+        "blister",
+        "cleaned it",
+        "cut",
+        "needs a plaster",
+        "not deep",
+        "plaster",
+        "scratched",
+        "splinter",
+        "stopped bleeding",
+        "wound"
+      ],
+      "travel_time_min": 10,
+      "resolution_time_min": 10,
+      "materials": [
+        {
+          "item": "Antiseptic Wipes",
+          "quantity": 2
+        },
+        {
+          "item": "Sterile Gauze",
+          "quantity": 1
+        },
+        {
+          "item": "Bandage Roll",
+          "quantity": 1
+        }
+      ],
+      "instructions": [
+        "Wash your hands and put on gloves.",
+        "Clean the wound with water and an antiseptic wipe, working outwards.",
+        "Dry the surrounding skin and cover with a sterile dressing.",
+        "Advise the person to return if it becomes red, hot or painful.",
+        "Log the treatment so a spreading infection is spotted early."
+      ],
+      "protocols": [
+        "MED-01_wounds_bleeding.pdf",
+        "MED-18_wound_infection_sepsis.pdf"
+      ]
+    },
+    {
+      "id": "supply-request",
+      "label": "Supply request (food, water, warmth)",
+      "severity": "LOW",
+      "strong_keywords": [
+        "hungry family",
+        "need food",
+        "need water",
+        "need+blankets",
+        "need+food",
+        "need+water",
+        "no blankets",
+        "no+blankets",
+        "no+food",
+        "no+water",
+        "nothing to eat",
+        "nothing+to+eat"
+      ],
+      "keywords": [
+        "baby",
+        "baby formula",
+        "blanket",
+        "children",
+        "children hungry",
+        "cold",
+        "cold at night",
+        "food",
+        "hungry",
+        "ran out",
+        "supplies",
+        "thirsty",
+        "water"
+      ],
+      "travel_time_min": 12,
+      "resolution_time_min": 10,
+      "materials": [
+        {
+          "item": "Water Bottle 500ml",
+          "quantity": 4
+        },
+        {
+          "item": "Energy Bar",
+          "quantity": 4
+        },
+        {
+          "item": "Thermal Blanket",
+          "quantity": 2
+        }
+      ],
+      "instructions": [
+        "Confirm how many people are in the group, including children and infants.",
+        "Issue rations from the current distribution allocation and record what was handed out.",
+        "Check for anyone unwell while you are there — supply calls often surface hidden casualties.",
+        "Note any medical or mobility needs for the next welfare round.",
+        "Return unused stock to the store."
+      ],
+      "protocols": [
+        "OPS-01_volunteer_task_protocol.pdf",
+        "SIT-08_food_water_contamination.pdf"
+      ]
+    },
+    {
+      "id": "power-lighting",
+      "label": "Lighting or power failure",
+      "severity": "LOW",
+      "strong_keywords": [
+        "blackout",
+        "lights+out",
+        "no light",
+        "no power",
+        "no+light",
+        "no+power",
+        "pitch+dark",
+        "power cut",
+        "power+cut"
+      ],
+      "keywords": [
+        "battery",
+        "cannot see",
+        "cannot see anything",
+        "dark",
+        "flashlight",
+        "fuse",
+        "generator",
+        "lamp",
+        "torch",
+        "wiring"
+      ],
+      "travel_time_min": 8,
+      "resolution_time_min": 15,
+      "materials": [
+        {
+          "item": "Flashlight",
+          "quantity": 2
+        }
+      ],
+      "instructions": [
+        "Take a working light and spare batteries.",
+        "Check that emergency exits and walkways are lit before anything else.",
+        "Identify anyone dependent on powered medical equipment as the highest priority.",
+        "Report the fault to the facilities lead with the affected area.",
+        "Return the lights to the store when the fault is cleared."
+      ],
+      "protocols": [
+        "OPS-01_volunteer_task_protocol.pdf",
+        "SIT-06_earthquake_response.pdf"
+      ]
+    }
+  ]
+}

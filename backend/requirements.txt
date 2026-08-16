@@ -1,42 +1,23 @@
-# Core API
+# ARIA — core runtime (~40 MB installed)
+#
+# This alone gives you a fully working shelter: typed intake, the deterministic
+# protocol rule engine, the priority queue, escalation, inventory, dispatch,
+# metrics and the whole dashboard.  No models, no GPU, no internet.
+#
+#   pip install -r backend/requirements.txt
+#
+# Add speech-to-text and RAG later with requirements-ml.txt — the app detects
+# what is installed at runtime and degrades cleanly when something is missing.
+
 fastapi==0.135.1
 uvicorn==0.41.0
 pydantic==2.12.5
 
-# Scheduling
-APScheduler==3.11.2
-
-# Audio denoising
-noisereduce==3.0.3
-soundfile==0.13.1
-scipy==1.17.1
-# denoiser==0.1.5         # Facebook DNS denoiser (optional, only needed when DENOISER=facebook)
-# torchaudio              # also required for facebook denoiser backend
-
-# Speech-to-text (requires torch + ffmpeg system package)
-# System: sudo apt install ffmpeg -y   (required by Whisper for audio loading)
-openai-whisper==20250625
-tiktoken==0.12.0
-numba==0.64.0
-
-# Deep learning runtime (CPU-only build — do NOT use default PyPI torch, it pulls CUDA)
-# Install with: pip install torch --index-url https://download.pytorch.org/whl/cpu
-torch==2.10.0+cpu
-numpy==2.4.3
-
-# RAG / LlamaIndex + HuggingFace embeddings
-llama-index-core==0.14.16
-llama-index-embeddings-huggingface==0.6.1
-sentence-transformers==5.3.0
-transformers==5.3.0
-
-# LLM inference (CPU) — compiled from source; prebuilt wheels available at:
-# https://abetlen.github.io/llama-cpp-python/whl/cpu
-llama_cpp_python==0.3.16
-openvino-genai==2026.0.0.0
-
-# Inventory
-pandas==3.0.1
+# Optional but recommended (~3 MB): faster, more accurate fuzzy item matching.
+# Without it ARIA falls back to difflib from the standard library.
 RapidFuzz==3.14.3
 
-optimum[openvino,onnxruntime]
+# Deliberately NOT dependencies any more:
+#   pandas       — replaced by the stdlib csv module (the ledger is ~20 rows)
+#   APScheduler  — replaced by a daemon thread with deterministic shutdown
+#   requests     — replaced by urllib for the handful of Ollama calls

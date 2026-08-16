@@ -182,23 +182,30 @@ frontend/node_modules/
 frontend/dist/
 frontend/out/
 
-# Backend — large binary model (download separately per SETUP.md)
-backend/models/*.gguf
-backend/models/*.bin
+# Backend — local configuration (copy from backend/.env.example)
+backend/.env
 
-# Backend — auto-generated vector index (rebuilt from PDFs on first run)
+# Backend — exported NPU models and downloaded weights (see docs/SETUP.md)
+backend/models/*
+!backend/models/.gitkeep
+
+# Backend — vector index, rebuilt from the protocol PDFs on demand
 backend/vector_store/
 !backend/vector_store/.gitkeep
 
+# Backend — runtime state snapshot (the board survives a restart, not a clone)
+backend/state/
+
 # Backend — runtime audio temp files
-backend/temp/*.wav
-backend/temp/*.mp3
+backend/temp/*
+!backend/temp/.gitkeep
 
-# Backend — append-only log (not tracked in git)
-backend/logs/*.jsonl
+# Backend — logs (rotating app log + the agent handoff trail)
+backend/logs/*
+!backend/logs/.gitkeep
 
-# Test denoiser I/O (may contain large audio files)
-backend/tests/noisy_input/
-backend/tests/denoised_output/
-noisy_input/
+# Test fixtures created at runtime
+backend/tests/.no-protocols/
+
+# Denoiser I/O used during evaluation
 denoised_output/

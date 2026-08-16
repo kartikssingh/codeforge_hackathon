@@ -1,0 +1,46 @@
+# ARIA — audio + RAG stack (~3 GB installed, CPU-only)
+#
+#   pip install -r backend/requirements.txt
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+#   pip install -r backend/requirements-ml.txt
+#
+# Install torch from the CPU index FIRST — the default PyPI wheel pulls ~2.5 GB
+# of CUDA libraries that are useless on a shelter laptop.
+#
+# System package required by Whisper for audio decoding:
+#   sudo apt install ffmpeg -y        # Debian/Ubuntu
+#   brew install ffmpeg               # macOS
+
+# ── Speech to text ────────────────────────────────────────────────────────────
+openai-whisper==20250625
+tiktoken==0.12.0
+numba==0.64.0
+
+# ── Audio denoising ───────────────────────────────────────────────────────────
+noisereduce==3.0.3
+soundfile==0.13.1
+scipy==1.17.1
+
+# ── Numerics ──────────────────────────────────────────────────────────────────
+numpy==2.4.3
+torch==2.10.0+cpu
+
+# ── RAG over the offline protocol PDFs ────────────────────────────────────────
+llama-index-core==0.14.16
+llama-index-embeddings-huggingface==0.6.1
+sentence-transformers==5.3.0
+transformers==5.3.0
+
+# ── Optional extras ───────────────────────────────────────────────────────────
+# Facebook DNS64 denoiser — higher quality on non-stationary noise, much slower.
+# Enable with ARIA_DENOISER=facebook.
+#   denoiser==0.1.5
+#   torchaudio
+#
+# NPU inference (see scripts/export_npu_model.py):
+#   openvino-genai==2026.0.0.0        # Intel Core Ultra NPU
+#   onnxruntime-genai                 # Apple Neural Engine / DirectML
+#   optimum[openvino,onnxruntime]     # needed only to export the weights
+#
+# The LLM itself is served by Ollama, which is installed separately:
+#   ollama pull gemma3:1b

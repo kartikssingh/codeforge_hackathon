@@ -1,16 +1,23 @@
 {
-    "name": "digital-lifeboat",
-    "version": "1.0.0",
-    "description": "ARIA — Offline Disaster Relief Command Centre (Electron)",
-    "main": "electron/main.js",
-    "scripts": {
-        "start": "electron .",
-        "dev": "electron . --inspect"
-    },
-    "dependencies": {
-        "electron": "^28.0.0"
-    },
-    "devDependencies": {},
-    "author": "",
-    "license": "MIT"
+  "name": "aria-command-centre",
+  "productName": "ARIA",
+  "version": "2.0.0",
+  "description": "ARIA — offline disaster relief command centre (Electron shell for the FastAPI backend)",
+  "main": "electron/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --inspect",
+    "ui-only": "ARIA_SKIP_BACKEND=1 electron ."
+  },
+  "keywords": [
+    "disaster-relief",
+    "offline",
+    "triage",
+    "electron"
+  ],
+  "dependencies": {
+    "electron": "^28.0.0"
+  },
+  "license": "MIT"
 }

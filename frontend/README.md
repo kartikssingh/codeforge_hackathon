@@ -1,134 +1,107 @@
-# ARIA — Frontend
+# ARIA frontend
 
-Electron-based desktop application for offline disaster relief coordination.
-
-## Quick Start
+Electron shell and dashboard for the ARIA backend.
 
 ```bash
-cd frontend
-npm install      # first time only
-npm start        # launch the app
-```
-
-> **Always run npm commands from inside the `frontend/` directory**, not the project root.
-
----
-
-## File Structure
-
-```
-frontend/
-├── index.html          # App shell — 3-column layout + modals (no logic)
-├── app.js              # All UI logic, mock data, rendering, event handling
-├── styles.css          # Theme variables + all component styles
-├── package.json        # Electron entry point & scripts
-├── electron/
-│   ├── main.js         # Electron main process — creates BrowserWindow
-│   └── preload.js      # contextBridge IPC layer (for future backend wiring)
-└── README.md           # This file
+npm install
+npm start            # starts the backend too, if one is not already running
+npm run ui-only      # attach to a backend someone else started
+npm run dev          # with the inspector attached
 ```
 
 ---
 
-## Layout — 3-Column Command Centre
+## Layout
 
-| Column | Name | Contents |
-|--------|------|----------|
-| 1 (260 px) | **Intake & Inventory** | Hub status, inventory bars, audio waveform, file upload, PROCESS MEMO button |
-| 2 (flex) | **Priority Queue** | Task cards — click any card to load its AI analysis in Column 3 |
-| 3 (380 px) | **AI Review** | Full task detail: transcript, steps, agent handoff, RAG sources, materials |
+```
+electron/
+  main.js      process lifecycle: spawn the backend, poll /health, own the
+               window, shut the backend down cleanly, show a readable error
+               dialog instead of a blank screen when boot fails
+  preload.js   the ONLY code that touches the network — window.aria.* over
+               Node's http module, plus an SSE subscription that reconnects
+
+index.html     three-column shell and the three dialogs
+styles.css     design system: tokens, three themes, every component
+js/
+  util.js            esc(), time formatting, DOM helpers
+  toast.js           transient notifications
+  api.js             wraps window.aria; every failure becomes a toast
+  store.js           single source of truth + subscribe/notify
+  view-inventory.js  stock panel
+  view-board.js      metric strip, filters, incident cards, timer tick
+  view-volunteers.js volunteer activity board
+  view-analysis.js   review · incident detail · agent log
+  modals.js          return · override · confirm (focus-trapped)
+  actions.js         every state-changing operation
+  intake.js          audio and text submission
+  controls.js        the small forms
+  app.js             bootstrap, SSE wiring, render loop, shortcuts
+```
+
+Scripts are classic, not ES modules: module scripts do not load over `file://`.
+Each file is an IIFE that attaches one object to `window.ARIA`, and load order
+in `index.html` is the dependency order.
+
+---
+
+## How it works
+
+**One state object.** `store.js` holds everything; views read `store.state` and
+redraw when notified. No view fetches, and no view calls another. Every
+mutating endpoint returns the whole board, so the three panels always describe
+the same instant.
+
+**Live updates.** `preload.js` holds one SSE connection and reconnects with
+exponential backoff. An event says *that* something changed; `app.js` responds
+by fetching `/board` once (coalesced). Polling remains as a slow safety net —
+10 s when the stream is down, 30 s when it is healthy.
+
+**Timers are surgical.** A one-second interval updates only elements carrying
+`data-countdown` / `data-elapsed`. Cards are not re-rendered, so a stepper you
+are editing does not lose focus.
+
+**Everything is escaped.** Transcripts and situation labels come from a model
+processing a stranger's voice. Every interpolated value goes through
+`util.esc()`.
+
+**Nothing renders from the network directly.** The renderer has no network
+access at all: its CSP is `default-src 'none'; script-src 'self'`, with no
+`connect-src`. All traffic goes through the preload bridge.
+
+---
+
+## Keyboard
+
+| Key | Action |
+|---|---|
+| `A` / `T` | Audio / typed intake |
+| `R` / `D` / `L` | Review · incident detail · agent log |
+| `G` | Refresh the board |
+| `/` | Search stock |
+| `Ctrl+Enter` | Submit a typed report |
+| `Esc` | Close a dialog |
 
 ---
 
 ## Themes
 
-Toggle via the **LIGHT / DARK / HC** buttons in the **bottom-left corner**. Choice is persisted to `localStorage`.
+Three, switched in the top bar and remembered in `localStorage`: **dark**
+(default), **light**, and **hc** — a high-contrast phosphor-on-black scheme for
+operating in the dark without ruining night vision.
 
-| Theme | Background | Text | Use case |
-|-------|-----------|------|----------|
-| **Light** | `#f0f2f5` | `#111` | Normal daylight operations |
-| **Dark** | `#0d0d0d` | `#e0e0e0` | Reduced eye strain / night ops |
-| **HC** (High-Contrast) | `#000000` | `#ccff00` | Harsh conditions, low-power OLED displays, maximum readability |
-
----
-
-## Mock Data (app.js)
-
-All data is defined at the top of `app.js` — no backend required.
-
-### `INVENTORY` array
-Each entry: `{ name, qty, total }`  
-Items below 20% stock show a blinking **CRITICAL LOW** label.
-
-### `TASKS` array
-Each task carries the full information model used across the UI:
-
-| Field | Type | Used in |
-|-------|------|---------|
-| `id` | `string` | Card header, AI panel |
-| `title` | `string` | Card body, AI panel heading |
-| `priority` | `'CRITICAL' \| 'HIGH'` | Card badge colour, AI chip |
-| `status` | `'IN_PROGRESS' \| 'PENDING' \| 'COMPLETE'` | Card state, border glow |
-| `location` | `string` | Card footer |
-| `volunteer` | `string \| null` | Card body |
-| `elapsedSec` | `number` | Live countdown timer on card |
-| `escalated` | `boolean` | ⚠ escalation icon on card |
-| `transcript` | `string` | AI panel — TRANSCRIPT section |
-| `estVictims` | `string` | AI panel — meta chip |
-| `estTimeMins` | `number` | AI panel — meta chip |
-| `steps` | `string[]` | AI panel — STEPS TO TAKE numbered list |
-| `sources` | `string[]` | AI panel — SOURCES (PDF filenames) |
-| `handoff` | `{ agent, time, note, done }[]` | AI panel — AGENT HANDOFF timeline |
-| `items` | `{ name, qty }[]` | AI panel — REQUIRED MATERIALS; Complete modal checklist |
+All colours come from CSS custom properties defined once per theme in
+`styles.css`. Severity is never carried by colour alone; every card and badge
+also spells the level out.
 
 ---
 
-## Key Interactions
+## Adding a panel
 
-### Task Selection
-Click any task card in Column 2 → Column 3 (AI Review) populates with that task's full data.  
-The first task is pre-selected on load.
+1. Add markup with a stable `id` in `index.html`.
+2. Create `js/view-thing.js` exporting `render(state)` and `mount()`.
+3. Add it to the `VIEWS` array and the `mount()` sequence in `app.js`, and to
+   the script list in `index.html`.
 
-### COMPLETE & RETURNED
-Click **COMPLETE** on an in-progress card → modal opens with a checklist of items taken.  
-All items must be checked before **CONFIRM RETURN** is enabled.  
-On confirm: task is marked complete, items are returned to inventory counts, AI panel moves to next task.
-
-### PROCESS MEMO
-Upload a `.mp3` or `.wav` file → click **PROCESS MEMO** → animated pipeline simulation  
-(Denoise → Transcribe → Triage → Allocate) with waveform animation.
-
-### OVERRIDE
-Click **OVERRIDE** in Column 3 → modal with:
-- **Situation** — text input (required)
-- **Steps to take** — textarea
-- **Resources** — `+`/`−` quantity selectors per inventory item (capped at available stock)
-
-### Auto-escalation
-Tasks in progress for > 10 minutes automatically gain the ⚠ escalation icon and timer turns red.
-
----
-
-## Styling Notes
-
-- **Brutalist design**: `border-radius: 0 !important` applied globally — no rounded corners.
-- **No gradients, no heavy shadows** — mission-critical terminal aesthetic.
-- In-progress cards animate with a priority-coloured glow (`@keyframes glow-*`).
-- CRITICAL LOW inventory label blinks via `@keyframes blink-label`.
-- Waveform bars animate during processing via `@keyframes wave-scale`.
-
----
-
-## Adding a New Task
-
-Add an entry to the `TASKS` array in `app.js` following the schema above. The UI renders everything dynamically — no HTML changes needed.
-
-## Future Backend Integration
-
-`electron/preload.js` exposes `window.api` via `contextBridge` with stubs for:
-- `runPipeline(audio_b64)` → `POST /pipeline`
-- `approveReport(...)` → `POST /approve`
-- `volunteerReturn(...)` → `POST /volunteer/return`
-- `getQueue()`, `getVolunteers()`, `getInventory()`
-
-Replace mock data calls in `app.js` with `await window.api.*` calls to wire up the FastAPI backend.
+Keep `render` a pure function of `state` — that is what makes a redraw on every
+change cheap and predictable.

@@ -1,203 +1,294 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!--
+    Strict CSP: no inline scripts, no remote anything, and no connect-src at all.
+    The renderer never talks to the network — every call goes through the
+    preload bridge over Electron's contextBridge.
+  -->
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';" />
-  <title>ARIA</title>
+        content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; form-action 'none'; base-uri 'none';" />
+  <title>ARIA — Autonomous Relief Intelligence Agent</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
 
-  <!-- ── Switchers ──────────────────────────────────────────────────────── -->
-  <div class="switchers-container">
-    <div class="theme-switcher">
-      <button class="theme-btn" data-theme="light">LIGHT</button>
-      <button class="theme-btn" data-theme="dark">DARK</button>
-      <button class="theme-btn" data-theme="hc">HC</button>
-    </div>
-
-    <div class="npu-switcher">
-      <button class="npu-btn active" data-mode="cpu">CPU</button>
-      <button class="npu-btn" data-mode="npu">NPU</button>
-    </div>
+<!-- ── Top bar ─────────────────────────────────────────────────────────────── -->
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark">ARIA</span>
+    <span class="brand-full">Autonomous Relief Intelligence Agent</span>
   </div>
 
-  <!-- ── 3-Column Command Center ─────────────────────────────────────────────── -->
-  <div class="layout">
-
-    <!-- ═══════════════ COLUMN 1 · Intake & Inventory ═══════════════ -->
-    <section class="col col-intake">
-
-      <div class="hub-header">
-        <div class="hub-name">ARIA - Autonomous Relief Intelligence Agent</div>
-        <div class="hub-sub">Status: <span class="status-active">ACTIVE</span></div>
-      </div>
-      <hr class="divider" />
-
-      <div class="section-label">INVENTORY</div>
-      <div class="inventory-list" id="inventory-list">
-        <!-- Rendered by app.js -->
-      </div>
-
-      <hr class="divider" />
-
-      <div class="section-label">AUDIO INTAKE</div>
-      <div class="audio-row">
-        <span class="audio-icon">&#x1F50A;</span>
-        <div class="waveform" id="waveform">
-          <div class="wave-bar" style="--bh:60%"></div>
-          <div class="wave-bar" style="--bh:85%"></div>
-          <div class="wave-bar" style="--bh:40%"></div>
-          <div class="wave-bar" style="--bh:70%"></div>
-          <div class="wave-bar" style="--bh:20%"></div>
-          <div class="wave-bar" style="--bh:95%"></div>
-          <div class="wave-bar" style="--bh:55%"></div>
-          <div class="wave-bar" style="--bh:75%"></div>
-        </div>
-      </div>
-
-      <hr class="divider" />
-
-      <div class="section-label">UPLOAD AUDIO</div>
-      <div class="upload-zone" id="upload-zone">
-        <input type="file" id="audio-file" />
-        <div class="upload-label" id="upload-label"></div>
-      </div>
-      <button class="btn btn-process" id="btn-process">PROCESS MEMO</button>
-      <div class="process-status hidden" id="process-status">&#x23F3; Denoising &amp; Transcribing...</div>
-
-    </section>
-
-    <!-- ═══════════════ COLUMN 2 · Priority Queue (70%) + Controls (30%) ═══════════════ -->
-    <section class="col col-queue">
-
-      <!-- === TOP: Active Incidents (70%) === -->
-      <div class="queue-top">
-        <div class="queue-header-row">
-          <div class="queue-title">Active incidents</div>
-          <div class="queue-count">Count: <span id="incident-count">0</span></div>
-        </div>
-        <hr class="divider" />
-
-        <div id="task-list">
-          <!-- Task cards rendered by app.js -->
-        </div>
-      </div>
-
-      <!-- === BOTTOM: Controls (30%) === -->
-      <div class="queue-bottom">
-        <hr class="divider" />
-
-        <!-- Volunteer Count -->
-        <div class="section-label">VOLUNTEER COUNT</div>
-        <div class="control-row">
-          <input type="number" id="volunteer-count-input" class="control-input" min="1" max="20" placeholder="Count" />
-          <button class="btn btn-control" id="btn-set-volunteers">SET</button>
-        </div>
-        <div class="control-status" id="volunteer-count-status"></div>
-
-        <hr class="divider" />
-
-        <!-- Inventory Update -->
-        <div class="section-label">UPDATE INVENTORY</div>
-        <div class="control-row">
-          <input type="text" id="inv-update-item" class="control-input control-input-wide" placeholder="Item name" />
-          <input type="number" id="inv-update-qty" class="control-input" min="1" placeholder="Qty" />
-          <button class="btn btn-control" id="btn-update-inventory">ADD</button>
-        </div>
-        <div class="control-status" id="inv-update-status"></div>
-
-        <hr class="divider" />
-
-        <!-- Create New Item -->
-        <div class="section-label">CREATE NEW ITEM</div>
-        <div class="control-row">
-          <input type="text" id="inv-create-item" class="control-input control-input-wide" placeholder="New item name" />
-          <input type="number" id="inv-create-cap" class="control-input" min="1" placeholder="Capacity" />
-          <button class="btn btn-control" id="btn-create-item">CREATE</button>
-        </div>
-        <div class="control-status" id="inv-create-status"></div>
-      </div>
-
-    </section>
-
-    <!-- ═══════════════ COLUMN 3 · AI Logic & Agent Handoff ═══════════════ -->
-    <section class="col col-ai">
-
-      <div class="ai-header-row">
-        <div class="ai-title">Incedent panel</div>
-        <div class="ai-mode-toggle" id="ai-mode-toggle">
-          <button class="ai-mode-btn active" id="ai-mode-queue" type="button">QUEUE VIEW</button>
-          <button class="ai-mode-btn" id="ai-mode-incoming" type="button">INCOMING REVIEW</button>
-        </div>
-      </div>
-      <hr class="divider" />
-
-      <!-- Fully populated by renderAiPanel() in app.js -->
-      <div id="ai-panel-content" class="ai-panel-scroll">
-        <div class="ai-no-selection" id="ai-no-selection">
-          &#x25B6;&nbsp; Select a task to view AI analysis
-        </div>
-      </div>
-
-      <div class="ai-actions hidden">
-        <button class="btn btn-approve" id="btn-approve">APPROVE</button>
-        <button class="btn btn-override" id="btn-override">OVERRIDE</button>
-      </div>
-
-    </section>
+  <div class="topbar-status">
+    <span class="conn-dot conn-down" id="conn-dot" aria-hidden="true"></span>
+    <span class="conn-label" id="conn-label">CONNECTING</span>
   </div>
 
-  <!-- ── Override Modal ──────────────────────────────────────────────────────── -->
-  <div class="modal-overlay hidden" id="override-overlay"
-       role="dialog" aria-modal="true" aria-labelledby="override-title">
-    <div class="modal modal-override">
-      <h2 class="modal-title" id="override-title">MANUAL OVERRIDE</h2>
-      <p class="modal-sub">Define the override situation and required resources:</p>
-
-      <div class="override-field">
-        <label class="override-label" for="override-situation">SITUATION</label>
-        <input type="text" id="override-situation" class="override-input"
-               placeholder="e.g. Bridge collapse - Route 9" />
-      </div>
-
-      <div class="override-field">
-        <label class="override-label" for="override-steps">STEPS TO TAKE</label>
-        <textarea id="override-steps" class="override-textarea" rows="3"
-                  placeholder="Describe response steps in order..."></textarea>
-      </div>
-
-      <div class="override-field">
-        <div class="override-label">RESOURCES REQUIRED</div>
-        <div class="override-items" id="override-items">
-          <!-- Rendered by app.js from INVENTORY -->
-        </div>
-      </div>
-
-      <div class="modal-footer">
-        <button class="btn btn-override-submit" id="override-submit">APPLY OVERRIDE</button>
-        <button class="btn btn-cancel" id="override-cancel">CANCEL</button>
-      </div>
+  <div class="topbar-switches">
+    <div class="switch-group" role="group" aria-label="Compute mode">
+      <button class="switch-btn compute-btn active" data-mode="cpu" type="button" title="Use the standard CPU backend">CPU</button>
+      <button class="switch-btn compute-btn" data-mode="npu" type="button" title="Use the on-device NPU if one is exported">NPU</button>
+    </div>
+    <div class="switch-group" role="group" aria-label="Theme">
+      <button class="switch-btn theme-btn" data-theme="light" type="button">LIGHT</button>
+      <button class="switch-btn theme-btn active" data-theme="dark" type="button">DARK</button>
+      <button class="switch-btn theme-btn" data-theme="hc" type="button" title="High contrast for low-light operation">HC</button>
     </div>
   </div>
+</header>
 
-  <!-- ── Complete & Returned Modal ───────────────────────────────────────────── -->
-  <div class="modal-overlay hidden" id="modal-overlay"
-       role="dialog" aria-modal="true" aria-labelledby="modal-title">
-    <div class="modal">
-      <h2 class="modal-title" id="modal-title">COMPLETE &amp; RETURNED</h2>
-      <p class="modal-sub">Enter the quantity of each item being returned to inventory:</p>
-      <div class="modal-checklist" id="modal-checklist"></div>
-      <p class="modal-note" id="modal-note">Enter returned quantities if any, then confirm.</p>
-      <div class="modal-footer">
-        <button class="btn btn-confirm" id="modal-confirm">CONFIRM RETURN</button>
-        <button class="btn btn-cancel" id="modal-cancel">CANCEL</button>
+<div class="banner hidden" id="bridge-warning" role="alert">
+  This page is open outside the ARIA desktop app, so it cannot reach the backend.
+  Start it with <code>cd frontend &amp;&amp; npm start</code>.
+</div>
+
+<!-- ── Three-column command centre ─────────────────────────────────────────── -->
+<main class="layout">
+
+  <!-- ═══ Column 1 — intake and stock ═══════════════════════════════════════ -->
+  <section class="col col-intake" aria-label="Intake and inventory">
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2 class="panel-title">Report intake</h2>
+      </div>
+
+      <div class="tabs" role="tablist" aria-label="Intake mode">
+        <button class="tab intake-tab active" data-mode="audio" role="tab" aria-selected="true" type="button">AUDIO</button>
+        <button class="tab intake-tab" data-mode="text" role="tab" aria-selected="false" type="button">TEXT</button>
+      </div>
+
+      <!-- Audio -->
+      <div class="intake-pane" data-mode="audio">
+        <div class="waveform" id="waveform" aria-hidden="true">
+          <span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span>
+          <span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span>
+          <span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span>
+          <span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span>
+        </div>
+
+        <div class="upload-zone" id="upload-zone" tabindex="0" role="button"
+             aria-label="Choose a distress recording">
+          <input type="file" id="audio-file" class="visually-hidden" />
+          <span class="upload-label" id="upload-label">Click to upload or drag &amp; drop</span>
+        </div>
+        <button class="btn btn-primary btn-block" id="btn-process" type="button">PROCESS REPORT</button>
+      </div>
+
+      <!-- Text -->
+      <div class="intake-pane hidden" data-mode="text">
+        <label class="field-label" for="text-report">
+          Type what came in over the radio, or what a runner reported
+        </label>
+        <textarea id="text-report" class="textarea" rows="5"
+                  placeholder="Bay 12 — elderly man collapsed, not breathing, someone is doing CPR"></textarea>
+        <button class="btn btn-primary btn-block" id="btn-process-text" type="button">TRIAGE REPORT</button>
+        <p class="hint">Ctrl+Enter submits. This path needs no speech model.</p>
+      </div>
+
+      <div class="process-status hidden" id="process-status" role="status"></div>
+    </div>
+
+    <div class="panel panel-grow">
+      <div class="panel-head">
+        <h2 class="panel-title">Stock</h2>
+        <span class="panel-sub" id="inventory-summary"></span>
+      </div>
+
+      <input type="search" id="inventory-search" class="input input-block"
+             placeholder="Search item, bin or category  ( / )" aria-label="Search inventory" />
+
+      <div class="inventory-list scroll-area" id="inventory-list"></div>
+
+      <div class="panel-actions">
+        <button class="btn btn-sm btn-ghost" id="btn-refill-partial" type="button"
+                title="Top up everything at or below the refill threshold">TOP UP LOW</button>
+        <button class="btn btn-sm btn-ghost" id="btn-refill-daily" type="button"
+                title="Full resupply: everything back to capacity, holds cleared">DAILY RESUPPLY</button>
       </div>
     </div>
-  </div>
 
-  <script src="app.js"></script>
+    <div class="panel">
+      <div class="panel-head"><h2 class="panel-title">Stock control</h2></div>
+
+      <div class="control-row">
+        <input type="text" id="stock-item" class="input input-wide" placeholder="Item name" aria-label="Item to restock" />
+        <input type="number" id="stock-qty" class="input input-narrow" min="1" placeholder="Qty" aria-label="Quantity to add" />
+        <button class="btn btn-sm" id="btn-add-stock" type="button">ADD</button>
+      </div>
+
+      <div class="control-row">
+        <input type="text" id="new-item" class="input input-wide" placeholder="New item" aria-label="New item name" />
+        <input type="number" id="new-capacity" class="input input-narrow" min="1" placeholder="Cap" aria-label="Capacity" />
+        <input type="text" id="new-bin" class="input input-narrow" placeholder="Bin" aria-label="Bin location" />
+        <button class="btn btn-sm" id="btn-create-item" type="button">CREATE</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ Column 2 — incidents and volunteers ═══════════════════════════════ -->
+  <section class="col col-board" aria-label="Incident board">
+
+    <div class="metric-strip" id="metric-strip"></div>
+
+    <div class="panel panel-grow">
+      <div class="panel-head">
+        <h2 class="panel-title">Active incidents</h2>
+        <span class="panel-sub"><span id="incident-count">0</span> shown</span>
+      </div>
+
+      <div class="filter-row" role="group" aria-label="Filter incidents">
+        <button class="filter-chip active" data-filter="ALL" type="button">ALL</button>
+        <button class="filter-chip" data-filter="AWAITING_REVIEW" type="button">AWAITING REVIEW</button>
+        <button class="filter-chip" data-filter="QUEUED" type="button">QUEUED</button>
+        <button class="filter-chip" data-filter="ASSIGNED" type="button">DISPATCHED</button>
+      </div>
+
+      <div class="task-list scroll-area" id="task-list"></div>
+    </div>
+
+    <div class="panel panel-volunteers">
+      <div class="panel-head">
+        <h2 class="panel-title">Volunteers</h2>
+        <span class="panel-sub" id="volunteer-summary"></span>
+      </div>
+
+      <div class="volunteer-list scroll-area" id="volunteer-list"></div>
+
+      <div class="control-row">
+        <input type="number" id="volunteer-count-input" class="input input-narrow" min="0" max="50"
+               placeholder="Count" aria-label="Roster size" />
+        <button class="btn btn-sm" id="btn-set-volunteers" type="button">SET SIZE</button>
+        <input type="text" id="new-volunteer-name" class="input input-wide" placeholder="Name (optional)"
+               aria-label="New volunteer name" />
+        <button class="btn btn-sm" id="btn-add-volunteer" type="button">ADD</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ Column 3 — analysis and approval ══════════════════════════════════ -->
+  <section class="col col-analysis" aria-label="Analysis and approval">
+    <div class="panel panel-grow">
+      <div class="panel-head">
+        <h2 class="panel-title">Analysis</h2>
+      </div>
+
+      <div class="tabs" role="tablist" aria-label="Analysis mode">
+        <button class="tab analysis-tab active" data-mode="review" role="tab" aria-selected="true" type="button">REVIEW</button>
+        <button class="tab analysis-tab" data-mode="detail" role="tab" aria-selected="false" type="button">INCIDENT</button>
+        <button class="tab analysis-tab" data-mode="log" role="tab" aria-selected="false" type="button">AGENT LOG</button>
+      </div>
+
+      <div class="analysis-content scroll-area" id="analysis-content"></div>
+
+      <div class="analysis-actions hidden" id="analysis-actions">
+        <button class="btn btn-approve" id="btn-approve" type="button">APPROVE &amp; DISPATCH</button>
+        <button class="btn btn-override" id="btn-override" type="button">OVERRIDE</button>
+        <button class="btn btn-ghost" id="btn-discard" type="button">DISCARD</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- ── Return modal ────────────────────────────────────────────────────────── -->
+<div class="modal-overlay hidden" id="modal-return" role="dialog" aria-modal="true" aria-labelledby="return-title">
+  <div class="modal">
+    <h2 class="modal-title" id="return-title">Back at base</h2>
+    <p class="modal-sub" id="return-subtitle"></p>
+
+    <div class="modal-body" id="return-checklist"></div>
+
+    <label class="field-label" for="return-note">Notes for the record (optional)</label>
+    <textarea id="return-note" class="textarea" rows="2"
+              placeholder="Casualty handed over to the medical team"></textarea>
+    <p class="hint">
+      Whatever is not returned is treated as used on site and written off stock —
+      that is how the ledger stays honest.
+    </p>
+
+    <div class="modal-footer">
+      <button class="btn btn-approve" id="return-confirm" type="button">CONFIRM RETURN</button>
+      <button class="btn btn-ghost" data-close-modal type="button">CANCEL</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Override modal ──────────────────────────────────────────────────────── -->
+<div class="modal-overlay hidden" id="modal-override" role="dialog" aria-modal="true" aria-labelledby="override-title">
+  <div class="modal modal-wide">
+    <h2 class="modal-title" id="override-title">Manual override</h2>
+    <p class="modal-sub" id="override-subtitle"></p>
+
+    <div class="modal-grid">
+      <div class="field">
+        <label class="field-label" for="override-condition">Situation</label>
+        <input type="text" id="override-condition" class="input input-block"
+               placeholder="Bridge collapse on Route 9" />
+      </div>
+      <div class="field field-narrow">
+        <label class="field-label" for="override-severity">Severity</label>
+        <select id="override-severity" class="input input-block">
+          <option value="CRITICAL">CRITICAL</option>
+          <option value="HIGH" selected>HIGH</option>
+          <option value="MEDIUM">MEDIUM</option>
+          <option value="LOW">LOW</option>
+        </select>
+      </div>
+      <div class="field field-narrow">
+        <label class="field-label" for="override-travel">Travel (min)</label>
+        <input type="number" id="override-travel" class="input input-block" min="0" max="600" value="10" />
+      </div>
+      <div class="field field-narrow">
+        <label class="field-label" for="override-resolution">On site (min)</label>
+        <input type="number" id="override-resolution" class="input input-block" min="0" max="600" value="20" />
+      </div>
+    </div>
+
+    <label class="field-label" for="override-steps">Steps for the volunteer (one per line)</label>
+    <textarea id="override-steps" class="textarea" rows="4"
+              placeholder="Set up a cordon at the north end&#10;Count the people cut off&#10;Report back before crossing"></textarea>
+
+    <label class="field-label" for="override-search">Supplies to send</label>
+    <input type="search" id="override-search" class="input input-block" placeholder="Search stock" />
+    <div class="modal-body" id="override-items"></div>
+
+    <div class="modal-footer">
+      <button class="btn btn-override" id="override-submit" type="button">APPLY OVERRIDE</button>
+      <button class="btn btn-ghost" data-close-modal type="button">CANCEL</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Confirm modal ───────────────────────────────────────────────────────── -->
+<div class="modal-overlay hidden" id="modal-confirm" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+  <div class="modal modal-narrow">
+    <h2 class="modal-title" id="confirm-title">Are you sure?</h2>
+    <p class="modal-sub" id="confirm-message"></p>
+    <div class="modal-footer">
+      <button class="btn btn-danger" id="confirm-accept" type="button">CONFIRM</button>
+      <button class="btn btn-ghost" id="confirm-cancel" type="button">CANCEL</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-stack" id="toast-stack" aria-live="polite" aria-atomic="false"></div>
+
+<!-- Load order matters: helpers, then state, then views, then wiring. -->
+<script src="js/util.js"></script>
+<script src="js/toast.js"></script>
+<script src="js/api.js"></script>
+<script src="js/store.js"></script>
+<script src="js/view-inventory.js"></script>
+<script src="js/view-board.js"></script>
+<script src="js/view-volunteers.js"></script>
+<script src="js/view-analysis.js"></script>
+<script src="js/modals.js"></script>
+<script src="js/actions.js"></script>
+<script src="js/intake.js"></script>
+<script src="js/controls.js"></script>
+<script src="js/app.js"></script>
 </body>
 </html>
